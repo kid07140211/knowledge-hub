@@ -5,7 +5,6 @@ import datetime
 import gspread
 
 
-
 # --- スプレッドシート設定 ---
 # 読み込み用URL
 csv_url = "https://docs.google.com/spreadsheets/d/17Di_oUYowzx7GcE0O03Y8Y1JfyOQ4oij_amOq6Hy3r4/export?format=csv"
@@ -135,6 +134,7 @@ selected = option_menu(
 if selected != st.session_state.selected_tab:
     st.session_state.selected_tab = selected
 
+df = load_data()
 
 # --- メインコンテンツ ---
 
