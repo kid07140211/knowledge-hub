@@ -2,11 +2,32 @@ import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
 import datetime
-from st_gsheets_connection import GSheetsConnection   
+import gspread
 
-   
-# --- GSheets接続設定 ---
-conn = st.connection("gsheets", type=GSheetsConnection)
+
+df = pd.DateFramea()
+# --- スプレッドシート設定 ---
+# 読み込み用URL
+csv_url = "https://docs.google.com/spreadsheets/d/17Di_oUYowzx7GcE0O03Y8Y1JfyOQ4oij_amOq6Hy3r4/export?format=csv"
+
+def load_data():
+    return pd.read_csv(csv_url)
+
+# --- 反映（書き込み）関数 ---
+def save_data(df):
+    try:
+        # 1. 認証設定（一旦、最も簡単な「公開スプレッドシートへの書き込み」を試みます）
+        # 本来はJSONキーが必要ですが、まずはライブラリが動くか確認しましょう
+        st.info("スプレッドシートに反映中...")
+        
+        # CSVとして一旦PC内にバックアップ
+        df.to_csv("my_hub.csv", index=False)
+        
+        # ※現時点では読み込みが優先ですが、ここに書き込み処理を追加していきます
+        st.success("PC内に保存完了！スプレッドシートへの直接書き込みには認証ファイルの配置が必要です。")
+        
+    except Exception as e:
+        st.error(f"エラーが発生しました: {e}")
 
 # --- ページ設定 & スタイル注入 (CSS) ---
 st.set_page_config(page_title="Knowledge Hub", layout="centered")
@@ -26,8 +47,6 @@ st.markdown("""
         padding: 1.5rem !important;
         margin-bottom: 1rem;
     }
-
-
     /* 著者名やタグの装飾 */
     .author-label { color: #6c757d; font-size: 0.9rem; }
     .tag-label { 
@@ -39,7 +58,6 @@ st.markdown("""
         margin-right: 5px;
         color: #495057;
     }
-
     /* ボタンのカスタマイズ */
     .stButton>button {
         border-radius: 10px;
@@ -57,15 +75,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-def load_data():
-    return conn.read(ttl="0s") # キャッシュを無効にして常に最新を取得
-
-# データの保存関数
-def save_data(df):
-    conn.update(data=df)
-    st.cache_data.clear() # キャッシュをクリア
-
-df = load_data()
 
 # --- アプリケーションの最上部にタイトルを表示 ---
 st.markdown("""
@@ -83,7 +92,7 @@ st.markdown("""
 def delete_item(df, idx):
     df = df.drop(idx)
     # ↓ CSVではなくスプレッドシートを更新するように変更
-    conn.update(data=df) 
+    save_data(df)
     st.cache_data.clear() # キャッシュをクリア
     st.rerun()
 # --- ボトムナビゲーション (HTML/JS的な役割) ---
