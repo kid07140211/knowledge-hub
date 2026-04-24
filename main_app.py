@@ -6,7 +6,8 @@ import gspread
 
 
 # --- スプレッドシート設定 ---
-# 読み込み用URL
+
+# 読み込み用URL.com/spreadshee
 csv_url = "https://docs.google.com/spreadsheets/d/17Di_oUYowzx7GcE0O03Y8Y1JfyOQ4oij_amOq6Hy3r4/export?format=csv"
 
 def load_data():
