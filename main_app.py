@@ -158,7 +158,11 @@ if selected != st.session_state.selected_tab:
 # --- メインコンテンツ ---
 
 # 1. 本棚
+# 1. 本棚
 if selected == "本棚":
+    # ページを表示する直前に最新のデータを読み込む
+    df = load_data()
+    
     # --- 便利機能：著者ページからのジャンプ受け口 ---
     default_search = st.session_state.get('book_search', "")
 
@@ -171,69 +175,55 @@ if selected == "本棚":
             author = c2.text_input("著者")
             tags = st.text_input("タグ (#数学 #物理)")
             status = st.radio("ステータス", ["読了", "これから読む"], horizontal=True)
+            
             if st.form_submit_button("本棚に保存"):
                 if title:
-                    # 1. 本のデータを準備
+                    # 1. 本のデータをDBへ直接保存
                     new_book = pd.DataFrame([{
-                        "date": datetime.date.today(), 
+                        "date": str(datetime.date.today()), 
                         "type": "book", 
                         "title": title, 
                         "author": author, 
                         "tags": tags, 
                         "status": status
                     }])
-                    
-                    # 2. 【ここが重要】著者が未登録なら自動で追加する
-                    # 既存の著者リストを取得
-                    existing_authors = df[df["type"] == "author"]["title"].tolist()
-                    
-                    # 著者名が入力されており、かつ未登録の場合
-                    if author and (author not in existing_authors):
-                        new_author = pd.DataFrame([{
-                            "date": datetime.date.today(),
-                            "type": "author",
-                            "title": author,
-                            "detail": f"『{title}』の著者",
-                            "related_books": title
-                        }])
-                        # 本と著者の両方を今のデータに追加
-                        df = pd.concat([df, new_book, new_author])
-                    else:
-                        # 著者が既にいる場合は、その著者の「関連本」に今の本を追記する
-                        if author:
-                            idx_list = df[(df["type"] == "author") & (df["title"] == author)].index
-                            if not idx_list.empty:
-                                idx = idx_list[0]
-                                current_rel = str(df.at[idx, 'related_books'])
-                                if title not in current_rel:
-                                    # 「nan」対策をしてから追記
-                                    new_rel = f"{current_rel}, {title}" if current_rel != "nan" else title
-                                    df.at[idx, 'related_books'] = new_rel
-                        
-                        # 本のデータだけ追加
-                        df = pd.concat([df, new_book])
-
-                    # 3. 保存してリロード
                     save_data_to_db(new_book)
+                    
+                    # 2. 著者の自動登録ロジック (DBを直接チェック)
+                    if author:
+                        # 最新のDBから著者リストを再取得
+                        current_df = load_data()
+                        existing_authors = current_df[current_df["type"] == "author"]["title"].tolist()
+                        
+                        if author not in existing_authors:
+                            # 著者がいなければ新規登録としてDBへ保存
+                            new_author = pd.DataFrame([{
+                                "date": str(datetime.date.today()),
+                                "type": "author",
+                                "title": author,
+                                "detail": f"『{title}』の著者",
+                                "related_books": title
+                            }])
+                            save_data_to_db(new_author)
+                    
+                    # 3. キャッシュをクリアして画面を更新
+                    st.cache_data.clear()
                     st.toast(f"『{title}』と著者『{author}』を登録しました！", icon='✅')
                     st.rerun()
                 else:
                     st.error("タイトルを入力してください")
-    # 検索・絞り込みエリア
+
+    # --- 検索・絞り込みエリア ---
     col_v, col_s = st.columns([0.4, 0.6])
     view = col_v.segmented_control("表示対象", ["読了", "これから読む"], default="読了")
-    
-    # 著者ページからのジャンプ時はここに自動でタイトルが入る
     search = col_s.text_input("🔍 タイトル・タグ検索", value=default_search)
 
-    # 検索が終わったらセッションをクリア（次回普通に開くときは空にするため）
     if 'book_search' in st.session_state:
         del st.session_state.book_search
     
-    # フィルタリング
+    # 表示用のフィルタリング
     res = df[(df["type"]=="book") & (df["status"]==view)]
     if search:
-        # タイトルまたはタグに検索ワードが含まれるものを抽出
         res = res[res["title"].str.contains(search, na=False) | res["tags"].str.contains(search, na=False)]
     
     # --- 表示ロジック ---
@@ -254,6 +244,7 @@ if selected == "本棚":
             
             with st.popover("⚙️ 操作"):
                 if st.button("🗑️ この本を削除", key=f"del_book_{i}"):
+                    # タイトルを指定して削除
                     delete_item(row['title'], "book")
             
             with st.expander(f"「{row['title']}」のメモを確認"):
@@ -266,14 +257,13 @@ if selected == "本棚":
                                     <span style="color: #adb5bd; font-size: 0.75rem;">📅 {m_row['date']}</span>
                                     <span style="color: #6c757d; font-size: 0.7rem;">{m_row['tags'] if pd.notna(m_row['tags']) else ''}</span>
                                 </div>
-                                <div style="color: #343a40; line-height: 1.4;">{m_row['memo']}</div>
+                                <div style="color: #343a40; line-height: 1.4;">{m_row['detail']}</div>
                             </div>
                             """, unsafe_allow_html=True)
                 else:
                     st.write("まだメモがありません。")
     else:
         st.info("該当する本が見つかりません。")
-
 # 2. メモ
 # --- 2. メモページ (ブラッシュアップ版) ---
 elif selected == "メモ":
@@ -414,6 +404,7 @@ elif selected == "計画":
                         delete_item(row['title'], "plan")
     else:
         st.info("登録されたミッションはありません。")
+        
 # 4. 著者
 elif selected == "著者":
     st.markdown("### 👥 Thinkers")
