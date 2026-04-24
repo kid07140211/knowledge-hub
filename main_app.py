@@ -5,7 +5,7 @@ import datetime
 import gspread
 
 
-df = pd.DateFramea()
+df = pd.DateFrame()
 # --- スプレッドシート設定 ---
 # 読み込み用URL
 csv_url = "https://docs.google.com/spreadsheets/d/17Di_oUYowzx7GcE0O03Y8Y1JfyOQ4oij_amOq6Hy3r4/export?format=csv"
