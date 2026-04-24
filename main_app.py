@@ -2,32 +2,58 @@ import streamlit as st
 import pandas as pd
 from streamlit_option_menu import option_menu
 import datetime
-import gspread
+import sqlite3
 
+# --- DB設定 (SQLite版) ---
+def get_connection():
+    # knowledge_hub.db というファイルが自動で作られます
+    return sqlite3.connect("knowledge_hub.db", check_same_thread=False)
 
-# --- スプレッドシート設定 ---
-
-# 読み込み用URL.com/spreadshee
-csv_url = "https://docs.google.com/spreadsheets/d/17Di_oUYowzx7GcE0O03Y8Y1JfyOQ4oij_amOq6Hy3r4/export?format=csv"
+def create_table():
+    conn = get_connection()
+    cur = conn.cursor()
+    # テーブルがなければ作成（カラム名は今のdfに合わせて調整してください）
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS data (
+            date TEXT, type TEXT, title TEXT, detail TEXT, 
+            related_books TEXT, author TEXT, tags TEXT, status TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 def load_data():
-    return pd.read_csv(csv_url)
+    create_table()
+    conn = get_connection()
+    df = pd.read_sql("SELECT * FROM data", conn)
+    conn.close()
+    return df
 
-# --- 反映（書き込み）関数 ---
-def save_data(df):
-    try:
-        # 1. 認証設定（一旦、最も簡単な「公開スプレッドシートへの書き込み」を試みます）
-        # 本来はJSONキーが必要ですが、まずはライブラリが動くか確認しましょう
-        st.info("スプレッドシートに反映中...")
-        
-        # CSVとして一旦PC内にバックアップ
-        df.to_csv("my_hub.csv", index=False)
-        
-        # ※現時点では読み込みが優先ですが、ここに書き込み処理を追加していきます
-        st.success("PC内に保存完了！スプレッドシートへの直接書き込みには認証ファイルの配置が必要です。")
-        
-    except Exception as e:
-        st.error(f"エラーが発生しました: {e}")
+def save_data_to_db(new_row_df):
+    conn = get_connection()
+    # DataFrameをそのままDBに追加保存
+    new_row_df.to_sql("data", conn, if_exists="append", index=False)
+    conn.commit()
+    conn.close()
+
+# --- 1. 冒頭に削除関数を定義 (SQLite対応版) ---
+def delete_item(item_id, item_type):
+    """
+    dfのインデックスではなく、DB上の行を直接特定して削除します。
+    ※load_dataで読み込む際、SQLiteの行番号(rowid)をIDとして使うと確実です。
+    """
+    conn = sqlite3.connect("knowledge_hub.db")
+    cur = conn.cursor()
+    # シンプルに「同じタイトルかつ同じタイプ」のものを消す命令
+    cur.execute("DELETE FROM data WHERE title = ? AND type = ?", (item_id, item_type))
+    conn.commit()
+    conn.close()
+    st.cache_data.clear() 
+    st.rerun()
+    
+# --- 2. データの読み込み ---
+# アプリの冒頭で1回だけ実行
+df = load_data()
 
 # --- ページ設定 & スタイル注入 (CSS) ---
 st.set_page_config(page_title="Knowledge Hub", layout="centered")
@@ -75,7 +101,6 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-
 # --- アプリケーションの最上部にタイトルを表示 ---
 st.markdown("""
     <div style="text-align: center; padding: 20px 0px;">
@@ -88,13 +113,7 @@ st.markdown("""
     </div>
     <hr style="margin-top: 0; margin-bottom: 20px; border: 0; border-top: 1px solid #eee;">
 """, unsafe_allow_html=True)
-# --- 修正後の削除関数 ---
-def delete_item(df, idx):
-    df = df.drop(idx)
-    # ↓ CSVではなくスプレッドシートを更新するように変更
-    save_data(df)
-    st.cache_data.clear() # キャッシュをクリア
-    st.rerun()
+
 # --- ボトムナビゲーション (HTML/JS的な役割) ---
 # --- サイドバーまたはメインのメニュー部分 ---
 tabs = ["本棚", "メモ", "計画", "著者"]
@@ -135,7 +154,6 @@ selected = option_menu(
 if selected != st.session_state.selected_tab:
     st.session_state.selected_tab = selected
 
-df = load_data()
 
 # --- メインコンテンツ ---
 
@@ -196,7 +214,7 @@ if selected == "本棚":
                         df = pd.concat([df, new_book])
 
                     # 3. 保存してリロード
-                    save_data(df)
+                    save_data_to_db(new_book)
                     st.toast(f"『{title}』と著者『{author}』を登録しました！", icon='✅')
                     st.rerun()
                 else:
@@ -236,7 +254,7 @@ if selected == "本棚":
             
             with st.popover("⚙️ 操作"):
                 if st.button("🗑️ この本を削除", key=f"del_book_{i}"):
-                    delete_item(df, i)
+                    delete_item(row['title'], "book")
             
             with st.expander(f"「{row['title']}」のメモを確認"):
                 book_memos = df[(df["type"]=="memo") & (df["title"]==row['title'])]
@@ -272,9 +290,8 @@ elif selected == "メモ":
                 
                 if st.form_submit_button("思考を記録する"):
                     if m_body:
-                        new_memo = pd.DataFrame([{"date": datetime.date.today(), "type": "memo", "title": target, "memo": m_body, "tags": m_tag}])
-                        df = pd.concat([df, new_memo])
-                        save_data(df)
+                        new_memo = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": target, "detail": m_body, "tags": m_tag}])
+                        save_data_to_db(new_memo)
                         st.toast(f'「{target}」にメモを保存しました', icon='📝')
                         st.rerun()
     
@@ -309,7 +326,7 @@ elif selected == "メモ":
             # 【ここに削除機能を追加】
             with st.popover("🗑️"):
                 if st.button("このメモを完全に削除", key=f"del_memo_{i}"):
-                    delete_item(df, i)
+                    delete_item(m_row['title'], "memo")
     else:
         st.info("まだメモがありません。上のフォームから最初の思考を記録しましょう！")
 
@@ -329,9 +346,9 @@ elif selected == "計画":
             p_end = c2.date_input("期限", datetime.date.today() + datetime.timedelta(days=7))
             if st.form_submit_button("ミッションを登録"):
                 if p_t:
-                    new = pd.DataFrame([{"date": datetime.date.today(), "type": "plan", "title": p_t, "detail": p_detail, "tags": p_tag, "start_date": str(p_start), "deadline": str(p_end)}])
-                    df = pd.concat([df, new])
-                    save_data(df)
+                    new_plan = pd.DataFrame([{"date": str(datetime.date.today()), "type": "plan", "title": p_t, "detail": p_detail, "tags": p_tag, "start_date": str(p_start), "deadline": str(p_end)}])
+                    save_data_to_db(new_plan)
+                    st.toast(f"ミッション『{p_t}』を予約しました", icon='🚀')
                     st.rerun()
 
     # データの準備
@@ -377,7 +394,7 @@ elif selected == "計画":
             with col_del:
                 with st.popover("🗑️"):
                     if st.button("削除", key=f"del_plan_{i}"):
-                        delete_item(df, i) # 事前に定義した削除関数
+                        delete_item(row['title'], "plan") # 事前に定義した削除関数
 
         # --- 3. 終了したミッション（履歴） ---
         if not history_plans.empty:
@@ -394,7 +411,7 @@ elif selected == "計画":
                         st.write(f"🏷️ {row['tags']}")
                     # 履歴の削除ボタン
                     if st.button("🗑️ 履歴から削除", key=f"del_hist_{i}"):
-                        delete_item(df, i)
+                        delete_item(row['title'], "plan")
     else:
         st.info("登録されたミッションはありません。")
 # 4. 著者
@@ -410,8 +427,7 @@ elif selected == "著者":
             if st.form_submit_button("登録"):
                 if a_name:
                     new_a = pd.DataFrame([{"date": datetime.date.today(), "type": "author", "title": a_name, "detail": a_desc, "related_books": a_books}])
-                    df = pd.concat([df, new_a])
-                    save_data(df)
+                    save_data_to_db(new_a)
                     st.rerun()
 
     st.markdown("---")
@@ -432,7 +448,7 @@ elif selected == "著者":
                 # 【ここに削除機能を追加】
                 with st.popover("⚙️"):
                     if st.button("🗑️ この著者を削除", key=f"del_auth_{i}"):
-                        delete_item(df, i)
+                        delete_item(row['title'], "author")
                 # 関連本ボタンの表示
                 related = row.get('related_books', "")
                 if pd.notna(related) and related:
