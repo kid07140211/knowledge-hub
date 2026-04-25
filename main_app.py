@@ -149,13 +149,14 @@ if selected == "本棚":
                     
                     # 著者が未登録なら自動登録
                     if author:
-                        existing_authors = df[df["type"] == "author"]["title"].tolist()
-                        if author not in existing_authors:
+                        # キャッシュを介さず、DBから直接現在の著者一覧を確認
+                        check_auth = supabase.table("knowledge_hub").select("title").eq("type", "author").eq("title", author).execute()
+                        if not check_auth.data: # 著者がまだ存在しない場合のみ登録
                             new_author = pd.DataFrame([{
                                 "date": str(datetime.date.today()), "type": "author",
                                 "title": author, "detail": f"『{title}』の著者", "related_books": title
                             }])
-                            save_data_to_db(new_author)
+                        save_data_to_db(new_author)
                     
                     st.toast(f"『{title}』を登録しました", icon='✅')
                     st.rerun()
@@ -249,35 +250,59 @@ elif selected == "計画":
             if st.button("🗑️ 削除", key=f"del_plan_{i}"):
                 delete_item(row['title'], "plan")
 
-# --- 【著者】 ---
+# --- 【著者】セクションの冒頭をこれに差し替え ---
 elif selected == "著者":
     st.markdown("### 👥 Thinkers")
+    
+    # ページ表示のたびに最新データを読み込む（重要！）
+    df = load_data() 
+    
     with st.expander("＋ 新しい著者を登録"):
         with st.form("add_author", clear_on_submit=True):
             a_name = st.text_input("著者名")
             a_desc = st.text_area("著者の思想など")
             a_books = st.text_input("関連本 (カンマ区切り)")
             if st.form_submit_button("登録"):
-                new_a = pd.DataFrame([{"date": str(datetime.date.today()), "type": "author", "title": a_name, "detail": a_desc, "related_books": a_books}])
-                save_data_to_db(new_a)
-                st.rerun()
-
-    authors = df[df["type"]=="author"]
-    for i, row in authors.iterrows():
-        st.markdown(f"""<div style="background: #f1f3f5; padding: 15px; border-radius: 10px; border-left: 5px solid #1d3557; margin-bottom: 10px;">
-                        <h4 style="margin: 0; color: #1d3557;">{row['title']}</h4>
-                        <p style="font-size: 0.9rem;">{row['detail'] if pd.notna(row['detail']) else ''}</p>
-                    </div>""", unsafe_allow_html=True)
-        
-        related = row.get('related_books', "")
-        if pd.notna(related) and related:
-            books = [b.strip() for b in re.split('[、,]', str(related))]
-            cols = st.columns(min(len(books), 5))
-            for idx, b_name in enumerate(books):
-                if cols[idx % 5].button(f"📖 {b_name}", key=f"j_{row['title']}_{idx}"):
-                    st.session_state.selected_tab = "本棚"
-                    st.session_state.book_search = b_name
+                if a_name:
+                    new_a = pd.DataFrame([{
+                        "date": str(datetime.date.today()), 
+                        "type": "author", 
+                        "title": a_name, 
+                        "detail": a_desc, 
+                        "related_books": a_books
+                    }])
+                    save_data_to_db(new_a)
+                    st.cache_data.clear()
                     st.rerun()
-        
-        if st.button("🗑️ 著者削除", key=f"del_auth_{i}"):
-            delete_item(row['title'], "author")
+
+    st.markdown("---")
+    authors = df[df["type"]=="author"]
+    
+    if authors.empty:
+        st.info("著者がまだ登録されていません。")
+    else:
+        for i, row in authors.iterrows():
+            with st.container():
+                st.markdown(f"""
+                <div style="background: #f1f3f5; padding: 15px; border-radius: 10px; border-left: 5px solid #1d3557; margin-bottom: 10px;">
+                    <h4 style="margin: 0; color: #1d3557;">{row['title']}</h4>
+                    <p style="font-size: 0.9rem; margin-top: 8px;">{row['detail'] if pd.notna(row['detail']) else ''}</p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 関連本の表示とジャンプ
+                related = row.get('related_books', "")
+                if pd.notna(related) and str(related).strip():
+                    books = [b.strip() for b in re.split('[、,]', str(related)) if b.strip()]
+                    if books:
+                        st.caption("📖 本棚へジャンプ:")
+                        cols = st.columns(min(len(books), 5))
+                        for idx, b_name in enumerate(books):
+                            if cols[idx % 5].button(f"{b_name}", key=f"j_{row['title']}_{idx}"):
+                                st.session_state.selected_tab = "本棚"
+                                st.session_state.book_search = b_name
+                                st.rerun()
+                
+                if st.button("🗑️ 著者削除", key=f"del_auth_{i}"):
+                    delete_item(row['title'], "author")
+                st.markdown("<br>", unsafe_allow_html=True)
