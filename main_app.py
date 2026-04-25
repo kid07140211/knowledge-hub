@@ -36,6 +36,7 @@ def load_data():
     except Exception as e:
         st.error(f"データ読み込みエラー: {e}")
         return pd.DataFrame(columns=columns)
+    
 def save_data_to_db(new_row_df):
     """DataFrameをSupabaseに保存する"""
     # 辞書形式に変換（空の値はNoneにする）
@@ -298,11 +299,13 @@ elif selected == "著者":
                         st.caption("📖 本棚へジャンプ:")
                         cols = st.columns(min(len(books), 5))
                         for idx, b_name in enumerate(books):
-                            if cols[idx % 5].button(f"{b_name}", key=f"j_{row['title']}_{idx}"):
+                            if cols[idx % 5].button(f"{b_name}", key=f"btn_{i}_{idx}_{b_name}"):
                                 st.session_state.selected_tab = "本棚"
                                 st.session_state.book_search = b_name
                                 st.rerun()
                 
-                if st.button("🗑️ 著者削除", key=f"del_auth_{i}"):
+                if st.button("🗑️ 著者削除", key=f"del_auth_btn_{i}"):
                     delete_item(row['title'], "author")
-                st.markdown("<br>", unsafe_allow_html=True)
+                    st.cache_data.clear()
+                    st.rerun()
+                    st.markdown("<br>", unsafe_allow_html=True)
