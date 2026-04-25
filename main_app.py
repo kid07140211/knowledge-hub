@@ -17,15 +17,25 @@ supabase: Client = create_client(URL, KEY)
 @st.cache_data(ttl=600)
 def load_data():
     """Supabaseから全データを読み込む"""
+    # 期待するカラムのリスト
+    columns = ["date", "type", "title", "detail", "author", "tags", "status", "start_date", "deadline", "related_books"]
     try:
         response = supabase.table("knowledge_hub").select("*").execute()
         if not response.data:
-            return pd.DataFrame(columns=["date", "type", "title", "detail", "author", "tags", "status", "start_date", "deadline", "related_books"])
-        return pd.DataFrame(response.data)
+            # データが1件もない場合、空の枠組み（カラム名だけある状態）を返す
+            return pd.DataFrame(columns=columns)
+        
+        df_raw = pd.DataFrame(response.data)
+        
+        # 足りないカラムがあれば補完する（これがKeyErrorを防ぐお守りになります）
+        for col in columns:
+            if col not in df_raw.columns:
+                df_raw[col] = None
+                
+        return df_raw
     except Exception as e:
         st.error(f"データ読み込みエラー: {e}")
-        return pd.DataFrame()
-
+        return pd.DataFrame(columns=columns)
 def save_data_to_db(new_row_df):
     """DataFrameをSupabaseに保存する"""
     # 辞書形式に変換（空の値はNoneにする）
