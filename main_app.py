@@ -227,8 +227,13 @@ elif selected == "メモ":
                     delete_item(m_row['title'], "memo")
 
 # --- 【計画】 ---
+# --- 【計画】 ---
 elif selected == "計画":
     st.markdown("### 📅 Mission Control")
+    
+    # 1. データの最新化
+    df = load_data()
+    
     with st.expander("＋ 新しいミッションを追加"):
         with st.form("plan_f", clear_on_submit=True):
             p_t = st.text_input("題名")
@@ -237,19 +242,69 @@ elif selected == "計画":
             p_start = c1.date_input("開始日", datetime.date.today())
             p_end = c2.date_input("期限", datetime.date.today() + datetime.timedelta(days=7))
             if st.form_submit_button("登録"):
-                new_plan = pd.DataFrame([{"date": str(datetime.date.today()), "type": "plan", "title": p_t, "detail": p_detail, "start_date": str(p_start), "deadline": str(p_end)}])
-                save_data_to_db(new_plan)
+                if p_t:
+                    new_plan = pd.DataFrame([{
+                        "date": str(datetime.date.today()), 
+                        "type": "plan", 
+                        "title": p_t, 
+                        "detail": p_detail, 
+                        "start_date": str(p_start), 
+                        "deadline": str(p_end)
+                    }])
+                    save_data_to_db(new_plan)
+                    st.rerun()
+
+    # データの整理
+    plans = df[df["type"]=="plan"].copy()
+    today = datetime.date.today()
+    
+    if not plans.empty:
+        # 文字列の日付をdateオブジェクトに変換
+        plans['deadline_dt'] = pd.to_datetime(plans['deadline']).dt.date
+        
+        # 進行中とアーカイブに分ける
+        active_plans = plans[plans['deadline_dt'] >= today].sort_values('deadline_dt')
+        past_plans = plans[plans['deadline_dt'] < today].sort_values('deadline_dt', ascending=False)
+
+        # --- 🚀 進行中のミッション ---
+        st.markdown("#### 🚀 Active Missions")
+        for i, row in active_plans.iterrows():
+            days_left = (row['deadline_dt'] - today).days
+            
+            # おしゃれなカードデザイン
+            st.markdown(f"""
+            <div style="background: white; padding: 20px; border-radius: 15px; border-left: 8px solid #3498db; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-weight: bold; font-size: 1.2rem; color: #2c3e50;">🎯 {row['title']}</span>
+                    <span style="background: #ebf5fb; color: #3498db; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold;">
+                        あと {days_left} 日
+                    </span>
+                </div>
+                <p style="color: #7f8c8d; font-size: 0.9rem; margin-top: 10px;">{row['detail'] if row['detail'] else '詳細なし'}</p>
+                <div style="font-size: 0.75rem; color: #bdc3c7; margin-top: 10px;">期限: {row['deadline']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("🗑️ 完了・削除", key=f"del_plan_{i}"):
+                delete_item(row['title'], "plan")
+                st.cache_data.clear()
                 st.rerun()
 
-    plans = df[df["type"]=="plan"].copy()
-    if not plans.empty:
-        st.markdown("#### 🚀 進行中のミッション")
-        for i, row in plans.iterrows():
-            ed = datetime.datetime.strptime(str(row['deadline']), '%Y-%m-%d').date()
-            days_left = (ed - datetime.date.today()).days
-            st.warning(f"🎯 {row['title']} (あと {days_left} 日)\n\n{row['detail']}")
-            if st.button("🗑️ 削除", key=f"del_plan_{i}"):
-                delete_item(row['title'], "plan")
+        # --- 📁 ミッション履歴 (Archive) ---
+        if not past_plans.empty:
+            st.markdown("---")
+            with st.expander("📁 Mission Archive（過去の記録）"):
+                for i, row in past_plans.iterrows():
+                    st.markdown(f"""
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; margin-bottom: 10px; opacity: 0.8;">
+                        <div style="color: #6c757d; text-decoration: line-through; font-weight: bold;">✅ {row['title']}</div>
+                        <div style="font-size: 0.8rem; color: #adb5bd;">期限: {row['deadline']}（終了）</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("履歴から削除", key=f"del_hist_{i}"):
+                        delete_item(row['title'], "plan")
+                        st.cache_data.clear()
+                        st.rerun()
 
 # --- 【著者】セクションの冒頭をこれに差し替え ---
 elif selected == "著者":
