@@ -7,8 +7,9 @@ from supabase import create_client, Client
 
 # --- 1. Supabase 接続設定 ---
 # Streamlit CloudのSecretsに設定した値を使用
-URL: str = st.secrets["https://cnlrkrubzynxltgxxhfq.supabase.co/rest/v1/"]
-KEY: str = st.secrets["sb_publishable_lNAGKaeQst8n2XLX4jJEfw_P23c4dAH"]
+# --- 修正後 ---
+URL: str = st.secrets["SUPABASE_URL"]
+KEY: str = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(URL, KEY)
 
 # --- 2. データベース操作関数 ---
