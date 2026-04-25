@@ -306,12 +306,15 @@ elif selected == "計画":
                         st.cache_data.clear()
                         st.rerun()
 
-# --- 【著者】セクションの冒頭をこれに差し替え ---
+# --- 【著者】 ---
 elif selected == "著者":
     st.markdown("### 👥 Thinkers")
     
-    # ページ表示のたびに最新データを読み込む（重要！）
-    df = load_data() 
+    # 最新データの読み込み
+    df = load_data()
+    
+    # 1. 検索バーの設置
+    search_query = st.text_input("🔍 著者を検索（名前やキーワード）", placeholder="例: 資本論, 現代思想, 氏名など")
     
     with st.expander("＋ 新しい著者を登録"):
         with st.form("add_author", clear_on_submit=True):
@@ -319,24 +322,38 @@ elif selected == "著者":
             a_desc = st.text_area("著者の思想など")
             a_books = st.text_input("関連本 (カンマ区切り)")
             if st.form_submit_button("登録"):
-                if a_name:data = {
-                    "date": str(datetime.date.today()), 
-                    "type": "author", 
-                    "title": str(a_name), 
-                    "detail": str(a_desc) if a_desc else "", 
-                    "related_books": str(a_books) if a_books else ""
-                }
-                new_a = pd.DataFrame([data])
-                save_data_to_db(new_a)
-                st.cache_data.clear()
-                st.rerun()
+                if a_name:
+                    new_a = pd.DataFrame([{
+                        "date": str(datetime.date.today()), 
+                        "type": "author", 
+                        "title": str(a_name), 
+                        "detail": str(a_desc) if a_desc else "", 
+                        "related_books": str(a_books) if a_books else ""
+                    }])
+                    save_data_to_db(new_a)
+                    st.cache_data.clear()
+                    st.rerun()
 
     st.markdown("---")
-    authors = df[df["type"]=="author"]
     
+    # 2. フィルタリング処理
+    authors = df[df["type"]=="author"].copy()
+    
+    if search_query:
+        # 名前(title)か詳細(detail)にキーワードが含まれているものを抽出（大文字小文字を区別しない）
+        authors = authors[
+            authors['title'].str.contains(search_query, case=False, na=False) | 
+            authors['detail'].str.contains(search_query, case=False, na=False)
+        ]
+        st.caption(f"検索結果: {len(authors)} 件")
+
     if authors.empty:
-        st.info("著者がまだ登録されていません。")
+        if search_query:
+            st.warning(f"「{search_query}」に一致する著者は見つかりませんでした。")
+        else:
+            st.info("著者がまだ登録されていません。")
     else:
+        # 3. 表示ループ
         for i, row in authors.iterrows():
             with st.container():
                 st.markdown(f"""
@@ -346,7 +363,6 @@ elif selected == "著者":
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # 関連本の表示とジャンプ
                 related = row.get('related_books', "")
                 if pd.notna(related) and str(related).strip():
                     books = [b.strip() for b in re.split('[、,]', str(related)) if b.strip()]
@@ -363,4 +379,4 @@ elif selected == "著者":
                     delete_item(row['title'], "author")
                     st.cache_data.clear()
                     st.rerun()
-                    st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
