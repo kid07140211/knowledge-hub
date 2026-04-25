@@ -263,17 +263,17 @@ elif selected == "著者":
             a_desc = st.text_area("著者の思想など")
             a_books = st.text_input("関連本 (カンマ区切り)")
             if st.form_submit_button("登録"):
-                if a_name:
-                    new_a = pd.DataFrame([{
-                        "date": str(datetime.date.today()), 
-                        "type": "author", 
-                        "title": a_name, 
-                        "detail": a_desc, 
-                        "related_books": a_books
-                    }])
-                    save_data_to_db(new_a)
-                    st.cache_data.clear()
-                    st.rerun()
+                if a_name:data = {
+                    "date": str(datetime.date.today()), 
+                    "type": "author", 
+                    "title": str(a_name), 
+                    "detail": str(a_desc) if a_desc else "", 
+                    "related_books": str(a_books) if a_books else ""
+                }
+                new_a = pd.DataFrame([data])
+                save_data_to_db(new_a)
+                st.cache_data.clear()
+                st.rerun()
 
     st.markdown("---")
     authors = df[df["type"]=="author"]
