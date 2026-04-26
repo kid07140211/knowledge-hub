@@ -128,6 +128,7 @@ df = load_data()
 # --- 5. メインコンテンツ ---
 
 # --- 【本棚】 ---
+# --- 【本棚】 ---
 if selected == "本棚":
     st.markdown("### 📚 My Bookshelf")
     default_search = st.session_state.get('book_search', "")
@@ -137,31 +138,34 @@ if selected == "本棚":
             c1, c2 = st.columns(2)
             title = c1.text_input("タイトル")
             author = c2.text_input("著者")
+            # 💡 ここにメモ入力欄を追加します
+            memo = st.text_area("本のメモ・感想") 
             tags = st.text_input("タグ (#数学 #物理)")
             status = st.radio("ステータス", ["読了", "これから読む"], horizontal=True)
             
             if st.form_submit_button("本棚に保存"):
                 if title:
+                    # 💡 detailカラムに直接メモを入れます
                     new_book = pd.DataFrame([{
                         "date": str(datetime.date.today()), "type": "book", 
-                        "title": title, "author": author, "tags": tags, "status": status
+                        "title": title, "author": author, "tags": tags, 
+                        "status": status, "detail": memo 
                     }])
                     save_data_to_db(new_book)
                     
-                    # 著者が未登録なら自動登録
                     if author:
-                        # キャッシュを介さず、DBから直接現在の著者一覧を確認
                         check_auth = supabase.table("knowledge_hub").select("title").eq("type", "author").eq("title", author).execute()
-                        if not check_auth.data: # 著者がまだ存在しない場合のみ登録
+                        if not check_auth.data:
                             new_author = pd.DataFrame([{
                                 "date": str(datetime.date.today()), "type": "author",
                                 "title": author, "detail": f"『{title}』の著者", "related_books": title
                             }])
-                        save_data_to_db(new_author)
+                            save_data_to_db(new_author)
                     
                     st.toast(f"『{title}』を登録しました", icon='✅')
                     st.rerun()
 
+    # --- 表示・検索部分 ---
     col_v, col_s = st.columns([0.4, 0.6])
     view = col_v.segmented_control("表示対象", ["読了", "これから読む"], default="読了")
     search = col_s.text_input("🔍 検索", value=default_search)
@@ -183,16 +187,18 @@ if selected == "本棚":
             </div>
             """, unsafe_allow_html=True)
             
+            # --- ここが修正ポイント：自身のdetailを表示するように変更 ---
+            with st.expander(f"「{row['title']}」のメモ"):
+                if pd.notna(row['detail']) and row['detail'] != "":
+                    st.info(row['detail'])
+                else:
+                    st.caption("メモはまだありません。")
+            
             with st.popover("⚙️ 操作"):
                 if st.button("🗑️ この本を削除", key=f"del_book_{i}"):
                     delete_item(row['title'], "book")
-            
-            with st.expander(f"「{row['title']}」のメモ"):
-                memos = df[(df["type"]=="memo") & (df["title"]==row['title'])]
-                for _, m in memos.iloc[::-1].iterrows():
-                    st.info(f"{m['detail']}\n\n---\n📅 {m['date']}")
-
-
+                    st.cache_data.clear()
+                    st.rerun()
 # --- 【メモ】セクション ---
 elif selected == "メモ":
     st.markdown("### 📝 Knowledge & Thought Log")
@@ -203,23 +209,35 @@ elif selected == "メモ":
     df = load_data()
 
     # --- タブ1: 本のメモ（既存の機能をこちらに集約） ---
+    # --- 📖 本の抜き書きタブ ---
     with memo_tab1:
-        st.markdown("#### 📚 Book Notes")
-        # 本に関連するデータ（type=="book"）から、詳細(detail)が空でないものを抽出
-        book_memos = df[(df["type"]=="book") & (df["detail"].notna()) & (df["detail"] != "")]
+        st.markdown("#### Book-based Insights")
         
-        b_search = st.text_input("🔍 本のメモを検索", key="book_memo_search")
-        if b_search:
-            book_memos = book_memos[book_memos['title'].str.contains(b_search, case=False) | 
-                                    book_memos['detail'].str.contains(b_search, case=False)]
+        # 修正ポイント：detailの空チェックを外して、本棚のすべての本を表示対象にする
+        book_memos = df[df["type"]=="book"].copy()
         
+        b_q = st.text_input("🔍 本のタイトルや著者で検索", key="b_memo_q")
+        if b_q:
+            book_memos = book_memos[
+                book_memos['title'].str.contains(b_q, case=False, na=False) | 
+                book_memos['author'].str.contains(b_q, case=False, na=False)
+            ]
+
         if book_memos.empty:
-            st.info("本のメモはまだありません。「本棚」から登録・編集できます。")
+            st.info("本棚に本がありません。まずは本棚セクションで本を登録してください。")
         else:
             for i, row in book_memos.iterrows():
-                with st.expander(f"📖 {row['title']}"):
-                    st.write(row['detail'])
-                    st.caption(f"著者: {row['author']} / タグ: {row['tags']}")
+                # メモが空の場合の初期メッセージ
+                display_text = row['detail'] if pd.notna(row['detail']) and row['detail'] != "" else "（まだメモがありません。下のボタンから編集してください）"
+                
+                with st.expander(f"📔 {row['title']} / {row['author']}"):
+                    st.markdown(f"""<div style="background:#f8f9fa; padding:15px; border-radius:10px; border-left:5px solid #3498db; white-space: pre-wrap;">{display_text}</div>""", unsafe_allow_html=True)
+                    
+                    # 💡 その場でメモを更新できるように「編集」ボタンかリンクを置くと便利です
+                    if st.button(f"✍️ {row['title']} のメモを編集", key=f"edit_b_{i}"):
+                        st.session_state.selected_tab = "本棚"
+                        st.session_state.book_search = row['title'] # 本棚の検索窓にタイトルを入れる
+                        st.rerun()
 
     # --- タブ2: 日常メモ（新機能） ---
     with memo_tab2:
