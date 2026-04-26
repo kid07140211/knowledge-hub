@@ -192,40 +192,82 @@ if selected == "本棚":
                 for _, m in memos.iloc[::-1].iterrows():
                     st.info(f"{m['detail']}\n\n---\n📅 {m['date']}")
 
-# --- 【メモ】 ---
-elif selected == "メモ":
-    st.markdown("### 📝 Deep Notes")
-    book_titles = df[df["type"]=="book"]["title"].unique()
-    
-    if len(book_titles) > 0:
-        with st.expander("＋ 新しい思考を記録する", expanded=True):
-            target = st.selectbox("対象の本を選択", book_titles)
-            with st.form("add_memo_form", clear_on_submit=True):
-                m_body = st.text_area("思考ログ", height=150)
-                m_tag = st.text_input("トピックタグ")
-                if st.form_submit_button("記録する"):
-                    if m_body:
-                        new_memo = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": target, "detail": m_body, "tags": m_tag}])
-                        save_data_to_db(new_memo)
-                        st.rerun()
-    
-    st.divider()
-    all_memos = df[df["type"]=="memo"]
-    if not all_memos.empty:
-        for i, m_row in all_memos.iloc[::-1].iterrows():
-            st.markdown(f"""
-                <div style="background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 12px; border-left: 4px solid #dee2e6;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="font-weight: bold; color: #495057;">📖 {m_row['title']}</span>
-                        <span style="color: #adb5bd; font-size: 0.75rem;">📅 {m_row['date']}</span>
-                    </div>
-                    <div style="font-size: 0.95rem; margin-bottom: 8px;">{m_row['detail']}</div>
-                </div>
-            """, unsafe_allow_html=True)
-            with st.popover("🗑️"):
-                if st.button("このメモを削除", key=f"del_memo_{i}"):
-                    delete_item(m_row['title'], "memo")
 
+# --- 【メモ】セクション ---
+elif selected == "メモ":
+    st.markdown("### 📝 Knowledge & Thought Log")
+    
+    # 1. ページ内タブで「本のメモ」と「日常メモ」を分ける
+    memo_tab1, memo_tab2 = st.tabs(["📖 本の抜き書き・感想", "💡 日常の思考・アイデア"])
+    
+    df = load_data()
+
+    # --- タブ1: 本のメモ（既存の機能をこちらに集約） ---
+    with memo_tab1:
+        st.markdown("#### 📚 Book Notes")
+        # 本に関連するデータ（type=="book"）から、詳細(detail)が空でないものを抽出
+        book_memos = df[(df["type"]=="book") & (df["detail"].notna()) & (df["detail"] != "")]
+        
+        b_search = st.text_input("🔍 本のメモを検索", key="book_memo_search")
+        if b_search:
+            book_memos = book_memos[book_memos['title'].str.contains(b_search, case=False) | 
+                                    book_memos['detail'].str.contains(b_search, case=False)]
+        
+        if book_memos.empty:
+            st.info("本のメモはまだありません。「本棚」から登録・編集できます。")
+        else:
+            for i, row in book_memos.iterrows():
+                with st.expander(f"📖 {row['title']}"):
+                    st.write(row['detail'])
+                    st.caption(f"著者: {row['author']} / タグ: {row['tags']}")
+
+    # --- タブ2: 日常メモ（新機能） ---
+    with memo_tab2:
+        st.markdown("#### ⚡ Quick Thoughts")
+        
+        # 検索機能
+        c1, c2 = st.columns([2, 1])
+        q_search = c1.text_input("🔍 キーワード検索", key="daily_memo_search")
+        t_search = c2.text_input("🏷️ タグ検索", key="daily_tag_search")
+        
+        with st.expander("＋ 新しい日常メモを追加"):
+            with st.form("add_daily_memo", clear_on_submit=True):
+                m_t = st.text_input("タイトル")
+                m_c = st.text_area("内容")
+                m_tag = st.text_input("タグ（カンマ区切り）")
+                if st.form_submit_button("保存"):
+                    if m_t and m_c:
+                        new_m = pd.DataFrame([{
+                            "date": str(datetime.date.today()), "type": "memo", 
+                            "title": m_t, "detail": m_c, "tags": m_tag
+                        }])
+                        save_data_to_db(new_m)
+                        st.cache_data.clear()
+                        st.rerun()
+
+        # 日常メモの表示（type=="memo"）
+        daily_memos = df[df["type"]=="memo"].copy()
+        if q_search:
+            daily_memos = daily_memos[daily_memos['title'].str.contains(q_search, case=False) | 
+                                      daily_memos['detail'].str.contains(q_search, case=False)]
+        if t_search:
+            daily_memos = daily_memos[daily_memos['tags'].str.contains(t_search, case=False, na=False)]
+            
+        for i, row in daily_memos.sort_index(ascending=False).iterrows():
+            st.markdown(f"""
+            <div style="background: white; padding: 15px; border-radius: 10px; border: 1px solid #eee; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <strong style="color: #1d3557;">{row['title']}</strong>
+                    <span style="color: #adb5bd; font-size: 0.7rem;">{row['date']}</span>
+                </div>
+                <div style="font-size: 0.9rem; margin-top: 5px; white-space: pre-wrap;">{row['detail']}</div>
+                <div style="margin-top: 8px; color: #3498db; font-size: 0.75rem;">#{row['tags']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            if st.button("🗑️ 削除", key=f"del_daily_{i}"):
+                delete_item(row['title'], "memo")
+                st.cache_data.clear()
+                st.rerun()
 # --- 【計画】 ---
 # --- 【計画】 ---
 elif selected == "計画":
