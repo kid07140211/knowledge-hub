@@ -128,24 +128,22 @@ df = load_data()
 # --- 5. メインコンテンツ ---
 
 # --- 【本棚】 ---
-# --- 【本棚】 ---
 if selected == "本棚":
     st.markdown("### 📚 My Bookshelf")
     default_search = st.session_state.get('book_search', "")
     
-    with st.expander("＋ 本を登録する"):
+    with st.expander("＋ 新しく本を登録する"):
         with st.form("add_book_form", clear_on_submit=True):
             c1, c2 = st.columns(2)
             title = c1.text_input("タイトル")
             author = c2.text_input("著者")
-            # 💡 ここにメモ入力欄を追加します
-            memo = st.text_area("本のメモ・感想") 
+            memo = st.text_area("最初のメモ・期待すること") 
             tags = st.text_input("タグ (#数学 #物理)")
-            status = st.radio("ステータス", ["読了", "これから読む"], horizontal=True)
+            # 💡 ステータスに「今読んでる」を追加
+            status = st.radio("ステータス", ["読了", "今読んでる", "これから読む"], horizontal=True, index=2)
             
             if st.form_submit_button("本棚に保存"):
                 if title:
-                    # 💡 detailカラムに直接メモを入れます
                     new_book = pd.DataFrame([{
                         "date": str(datetime.date.today()), "type": "book", 
                         "title": title, "author": author, "tags": tags, 
@@ -166,39 +164,66 @@ if selected == "本棚":
                     st.rerun()
 
     # --- 表示・検索部分 ---
-    col_v, col_s = st.columns([0.4, 0.6])
-    view = col_v.segmented_control("表示対象", ["読了", "これから読む"], default="読了")
+    col_v, col_s = st.columns([0.5, 0.5])
+    # 💡 segmented_control の選択肢を3つに拡充
+    view = col_v.segmented_control("表示対象", ["読了", "今読んでる", "これから読む"], default="今読んでる")
     search = col_s.text_input("🔍 検索", value=default_search)
 
     if 'book_search' in st.session_state:
         del st.session_state.book_search
     
-    res = df[(df["type"]=="book") & (df["status"]==view)]
+    # 💡 データのフィルタリング（重複を排除し最新のステータスを優先）
+    res = df[df["type"]=="book"].sort_values('date').drop_duplicates(subset='title', keep='last')
+    res = res[res["status"]==view]
+    
     if search:
-        res = res[res["title"].str.contains(search, na=False) | res["tags"].str.contains(search, na=False)]
+        res = res[res["title"].str.contains(search, na=False, case=False) | res["tags"].str.contains(search, na=False, case=False)]
     
     if not res.empty:
         for i, row in res.iloc[::-1].iterrows():
+            # 💡 ステータスに応じてアクセントカラーを変更
+            border_color = "#27ae60" if view == "読了" else "#f1c40f" if view == "今読んでる" else "#34495e"
+            
             st.markdown(f"""
-            <div style="background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 10px; border-left: 5px solid #343a40;">
+            <div style="background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 10px; border-left: 5px solid {border_color};">
                 <div style="font-weight: bold; font-size: 1.1rem; color: #212529;">📖 {row['title']}</div>
                 <div style="color: #6c757d; font-size: 0.9rem;">👤 {row['author'] if pd.notna(row['author']) else '不明'}</div>
-                <div style="margin-top: 8px;"><span class="tag-label">{row['tags'] if pd.notna(row['tags']) else ''}</span></div>
+                <div style="margin-top: 8px;"><span style="background: #f8f9fa; color: #636e72; padding: 2px 8px; border-radius: 5px; font-size: 0.75rem; border: 1px solid #dfe6e9;">{row['tags'] if pd.notna(row['tags']) else ''}</span></div>
             </div>
             """, unsafe_allow_html=True)
             
-            # --- ここが修正ポイント：自身のdetailを表示するように変更 ---
-            with st.expander(f"「{row['title']}」のメモ"):
+            # --- ⚙️ クイック・ステータス変更ボタン ---
+            col_btn1, col_btn2 = st.columns([0.7, 0.3])
+            
+            with col_btn1:
+                # 今の状態に応じて、次に進むためのボタンを表示
+                if view == "これから読む":
+                    if st.button(f"📖 読み始める", key=f"start_{i}", use_container_width=True):
+                        new_data = pd.DataFrame([{**row.to_dict(), "status": "今読んでる", "date": str(datetime.date.today())}])
+                        save_data_to_db(new_data)
+                        st.cache_data.clear()
+                        st.rerun()
+                elif view == "今読んでる":
+                    if st.button(f"✅ 読了！", key=f"finish_{i}", use_container_width=True):
+                        new_data = pd.DataFrame([{**row.to_dict(), "status": "読了", "date": str(datetime.date.today())}])
+                        save_data_to_db(new_data)
+                        st.cache_data.clear()
+                        st.rerun()
+            
+            with col_btn2:
+                with st.popover("⚙️"):
+                    if st.button("🗑️ 削除", key=f"del_book_{i}", use_container_width=True):
+                        delete_item(row['title'], "book")
+                        st.cache_data.clear()
+                        st.rerun()
+            
+            with st.expander(f"「{row['title']}」のメモを表示"):
                 if pd.notna(row['detail']) and row['detail'] != "":
                     st.info(row['detail'])
                 else:
                     st.caption("メモはまだありません。")
             
-            with st.popover("⚙️ 操作"):
-                if st.button("🗑️ この本を削除", key=f"del_book_{i}"):
-                    delete_item(row['title'], "book")
-                    st.cache_data.clear()
-                    st.rerun()
+            st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 # --- 【メモ】セクション ---
 elif selected == "メモ":
     st.markdown("### 📝 Knowledge & Thought Log")
