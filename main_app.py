@@ -230,14 +230,38 @@ elif selected == "メモ":
                 # メモが空の場合の初期メッセージ
                 display_text = row['detail'] if pd.notna(row['detail']) and row['detail'] != "" else "（まだメモがありません。下のボタンから編集してください）"
                 
-                with st.expander(f"📔 {row['title']} / {row['author']}"):
-                    st.markdown(f"""<div style="background:#f8f9fa; padding:15px; border-radius:10px; border-left:5px solid #3498db; white-space: pre-wrap;">{display_text}</div>""", unsafe_allow_html=True)
+                with st.container():
+                    st.markdown(f"""
+                    <div style="background:#f8f9fa; padding:15px; border-radius:10px; border-left:5px solid #3498db; margin-bottom:5px;">
+                        <div style="font-weight:bold; color:#1d3557; margin-bottom:5px;">📖 {row['title']}</div>
+                        <div style="font-size:0.9rem; white-space: pre-wrap; color:#333;">{display_text}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
                     
-                    # 💡 その場でメモを更新できるように「編集」ボタンかリンクを置くと便利です
-                    if st.button(f"✍️ {row['title']} のメモを編集", key=f"edit_b_{i}"):
-                        st.session_state.selected_tab = "本棚"
-                        st.session_state.book_search = row['title'] # 本棚の検索窓にタイトルを入れる
-                        st.rerun()
+                    # 💡 その場で編集するためのポップオーバー
+                    with st.popover("✍️ メモを編集"):
+                        with st.form(key=f"edit_form_{i}"):
+                            # 現在のメモを初期値として表示
+                            new_detail = st.text_area("内容を更新", value=row['detail'] if pd.notna(row['detail']) else "")
+                            
+                            if st.form_submit_button("保存する"):
+                                # DBを直接更新する処理
+                                # ※タイトルとタイプをキーにして、detailだけを上書き
+                                updated_row = pd.DataFrame([{
+                                    "date": row['date'], # 日付は維持
+                                    "type": "book",
+                                    "title": row['title'],
+                                    "author": row['author'],
+                                    "tags": row['tags'],
+                                    "status": row['status'],
+                                    "detail": new_detail # ここを書き換え
+                                }])
+                                save_data_to_db(updated_row)
+                                st.success("保存しました！")
+                                st.cache_data.clear()
+                                st.rerun()
+                    
+                    st.markdown("<div style='margin-bottom:20px;'></div>", unsafe_allow_html=True)
 
     # --- タブ2: 日常メモ（新機能） ---
     with memo_tab2:
