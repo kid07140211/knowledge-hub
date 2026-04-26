@@ -202,23 +202,36 @@ if selected == "本棚":
             # --- ⚙️ クイック・ステータス変更ボタン ---
             col_btn1, col_btn2 = st.columns([0.7, 0.3])
             
+            # --- 修正版：ステータス変更ボタンの処理 ---
+
             with col_btn1:
                 if view == "これから読む":
                     if st.button(f"📖 読み始める", key=f"start_{i}", use_container_width=True):
-                        # 💡 データを辞書形式にして、明示的にステータスを上書きして保存
                         row_dict = row.to_dict()
+            
+                   # 💡 【重要】idが辞書に含まれている場合は削除する
+                        if "id" in row_dict:
+                            del row_dict["id"]
+                
                         row_dict["status"] = "今読んでる"
                         row_dict["date"] = str(datetime.date.today())
-                        # DataFrameにして保存（indexは含めない）
+            
                         new_data = pd.DataFrame([row_dict])
                         save_data_to_db(new_data)
                         st.cache_data.clear()
                         st.rerun()
+
                 elif view == "今読んでる":
                     if st.button(f"✅ 読了！", key=f"finish_{i}", use_container_width=True):
                         row_dict = row.to_dict()
+            
+                        # 💡 【重要】idが辞書に含まれている場合は削除する
+                        if "id" in row_dict:
+                            del row_dict["id"]
+                
                         row_dict["status"] = "読了"
                         row_dict["date"] = str(datetime.date.today())
+            
                         new_data = pd.DataFrame([row_dict])
                         save_data_to_db(new_data)
                         st.cache_data.clear()
