@@ -228,40 +228,65 @@ elif selected == "メモ":
         else:
             for i, row in book_memos.iterrows():
                 # メモが空の場合の初期メッセージ
+                has_memo = pd.notna(row['detail']) and row['detail'].strip() != ""
                 display_text = row['detail'] if pd.notna(row['detail']) and row['detail'] != "" else "（まだメモがありません。下のボタンから編集してください）"
                 
-                with st.container():
-                    st.markdown(f"""
-                    <div style="background:#f8f9fa; padding:15px; border-radius:10px; border-left:5px solid #3498db; margin-bottom:5px;">
-                        <div style="font-weight:bold; color:#1d3557; margin-bottom:5px;">📖 {row['title']}</div>
-                        <div style="font-size:0.9rem; white-space: pre-wrap; color:#333;">{display_text}</div>
+                # --- デザインカード ---
+                st.markdown(f"""
+                <div style="
+                    background: white; 
+                    padding: 20px; 
+                    border-radius: 15px; 
+                    border-left: 6px solid #3498db; 
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+                    margin-bottom: 10px;
+                ">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-weight: bold; font-size: 1.1rem; color: #1d3557;">📖 {row['title']}</span>
+                        <span style="font-size: 0.8rem; color: #95a5a6;">👤 {row['author']}</span>
                     </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # 💡 その場で編集するためのポップオーバー
-                    with st.popover("✍️ メモを編集"):
-                        with st.form(key=f"edit_form_{i}"):
-                            # 現在のメモを初期値として表示
-                            new_detail = st.text_area("内容を更新", value=row['detail'] if pd.notna(row['detail']) else "")
-                            
-                            if st.form_submit_button("保存する"):
-                                # DBを直接更新する処理
-                                # ※タイトルとタイプをキーにして、detailだけを上書き
-                                updated_row = pd.DataFrame([{
-                                    "date": row['date'], # 日付は維持
-                                    "type": "book",
-                                    "title": row['title'],
-                                    "author": row['author'],
-                                    "tags": row['tags'],
-                                    "status": row['status'],
-                                    "detail": new_detail # ここを書き換え
-                                }])
-                                save_data_to_db(updated_row)
-                                st.success("保存しました！")
-                                st.cache_data.clear()
-                                st.rerun()
-                    
-                    st.markdown("<div style='margin-bottom:20px;'></div>", unsafe_allow_html=True)
+                    <div style="
+                        background: #fcfcfc; 
+                        padding: 15px; 
+                        border-radius: 8px; 
+                        font-size: 0.95rem; 
+                        line-height: 1.6; 
+                        color: {'#34495e' if has_memo else '#bdc3c7'}; 
+                        white-space: pre-wrap;
+                        border: 1px solid #f1f1f1;
+                    ">{display_text}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # --- 編集用ポップオーバー ---
+                # use_container_width=True で幅をしっかり確保
+                with st.popover("✍️ メモを編集・追記", use_container_width=True):
+                    st.markdown(f"### 📝 Edit Note: {row['title']}")
+                    with st.form(key=f"edit_form_{i}", clear_on_submit=False):
+                        # 編集エリアを大きく確保
+                        new_detail = st.text_area(
+                            "内容（読書メモ、要約、心に響いた言葉など）", 
+                            value=row['detail'] if pd.notna(row['detail']) else "",
+                            height=300 # 入力欄を高くして書きやすく
+                        )
+                        
+                        col_submit, col_cancel = st.columns([1, 1])
+                        if col_submit.form_submit_button("✅ 変更を保存"):
+                            updated_row = pd.DataFrame([{
+                                "date": row['date'],
+                                "type": "book",
+                                "title": row['title'],
+                                "author": row['author'],
+                                "tags": row['tags'],
+                                "status": row['status'],
+                                "detail": new_detail
+                            }])
+                            save_data_to_db(updated_row)
+                            st.toast("メモを更新しました！")
+                            st.cache_data.clear()
+                            st.rerun()
+                
+                st.markdown("<div style='margin-bottom: 30px;'></div>", unsafe_allow_html=True)
 
     # --- タブ2: 日常メモ（新機能） ---
     with memo_tab2:
