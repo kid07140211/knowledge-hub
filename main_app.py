@@ -172,16 +172,23 @@ if selected == "本棚":
     if 'book_search' in st.session_state:
         del st.session_state.book_search
     
-    # 💡 データのフィルタリング（重複を排除し最新のステータスを優先）
-    res = df[df["type"]=="book"].sort_values('date').drop_duplicates(subset='title', keep='last')
-    res = res[res["status"]==view]
+    # 💡 修正ポイント：インデックス（登録順）を基準にソートして、確実に「一番最後に追加されたステータス」を優先する
+    all_books = df[df["type"]=="book"].copy()
+    if not all_books.empty:
+        # indexでソートすることで、DBに後から入った（ボタンを押した）データを一番下にする
+        res = all_books.sort_index().drop_duplicates(subset='title', keep='last')
+        # その後、選択されたステータスで絞り込む
+        res = res[res["status"]==view]
+    else:
+        res = pd.DataFrame()
     
     if search:
         res = res[res["title"].str.contains(search, na=False, case=False) | res["tags"].str.contains(search, na=False, case=False)]
     
     if not res.empty:
+        # 表示は新しい順（降順）にする
         for i, row in res.iloc[::-1].iterrows():
-            # 💡 ステータスに応じてアクセントカラーを変更
+            # (以下、カード表示とボタンのコードはそのまま)
             border_color = "#27ae60" if view == "読了" else "#f1c40f" if view == "今読んでる" else "#34495e"
             
             st.markdown(f"""
@@ -196,16 +203,23 @@ if selected == "本棚":
             col_btn1, col_btn2 = st.columns([0.7, 0.3])
             
             with col_btn1:
-                # 今の状態に応じて、次に進むためのボタンを表示
                 if view == "これから読む":
                     if st.button(f"📖 読み始める", key=f"start_{i}", use_container_width=True):
-                        new_data = pd.DataFrame([{**row.to_dict(), "status": "今読んでる", "date": str(datetime.date.today())}])
+                        # 💡 データを辞書形式にして、明示的にステータスを上書きして保存
+                        row_dict = row.to_dict()
+                        row_dict["status"] = "今読んでる"
+                        row_dict["date"] = str(datetime.date.today())
+                        # DataFrameにして保存（indexは含めない）
+                        new_data = pd.DataFrame([row_dict])
                         save_data_to_db(new_data)
                         st.cache_data.clear()
                         st.rerun()
                 elif view == "今読んでる":
                     if st.button(f"✅ 読了！", key=f"finish_{i}", use_container_width=True):
-                        new_data = pd.DataFrame([{**row.to_dict(), "status": "読了", "date": str(datetime.date.today())}])
+                        row_dict = row.to_dict()
+                        row_dict["status"] = "読了"
+                        row_dict["date"] = str(datetime.date.today())
+                        new_data = pd.DataFrame([row_dict])
                         save_data_to_db(new_data)
                         st.cache_data.clear()
                         st.rerun()
