@@ -202,47 +202,51 @@ if selected == "本棚":
             # --- ⚙️ クイック・ステータス変更ボタン ---
             col_btn1, col_btn2 = st.columns([0.7, 0.3])
             
-            # --- 修正版：ステータス変更ボタンの処理 ---
-
             with col_btn1:
+                # 1. メインのアクション（次に進む）を判定
                 if view == "これから読む":
-                    if st.button(f"📖 読み始める", key=f"start_{i}", use_container_width=True):
-                        row_dict = row.to_dict()
-            
-                   # 💡 【重要】idが辞書に含まれている場合は削除する
-                        if "id" in row_dict:
-                            del row_dict["id"]
-                
-                        row_dict["status"] = "今読んでる"
-                        row_dict["date"] = str(datetime.date.today())
-            
-                        new_data = pd.DataFrame([row_dict])
-                        save_data_to_db(new_data)
-                        st.cache_data.clear()
-                        st.rerun()
-
+                    main_label, main_target, main_icon = "📖 読み始める", "今読んでる", "🚀"
                 elif view == "今読んでる":
-                    if st.button(f"✅ 読了！", key=f"finish_{i}", use_container_width=True):
-                        row_dict = row.to_dict()
-            
-                        # 💡 【重要】idが辞書に含まれている場合は削除する
-                        if "id" in row_dict:
-                            del row_dict["id"]
-                
-                        row_dict["status"] = "読了"
-                        row_dict["date"] = str(datetime.date.today())
-            
-                        new_data = pd.DataFrame([row_dict])
-                        save_data_to_db(new_data)
-                        st.cache_data.clear()
-                        st.rerun()
+                    main_label, main_target, main_icon = "✅ 読了！", "読了", "🎊"
+                else: # 読了
+                    main_label, main_target, main_icon = "🔄 もう一度読む", "今読んでる", "📚"
+
+                if st.button(main_label, key=f"main_move_{i}", use_container_width=True):
+                    row_dict = row.to_dict()
+                    if "id" in row_dict: del row_dict["id"]
+                    row_dict["status"] = main_target
+                    row_dict["date"] = str(datetime.date.today())
+                    save_data_to_db(pd.DataFrame([row_dict]))
+                    st.toast(f"{main_target} に移動しました {main_icon}")
+                    st.rerun()
             
             with col_btn2:
+                # 2. サブのアクション（戻る・直接変更・削除）をポップオーバーに集約
                 with st.popover("⚙️"):
-                    if st.button("🗑️ 削除", key=f"del_book_{i}", use_container_width=True):
-                        delete_item(row['title'], "book")
-                        st.cache_data.clear()
+                    st.caption("ステータスを直接変更")
+                    
+                    # 現在のステータス以外を表示する
+                    statuses = ["これから読む", "今読んでる", "読了"]
+                    other_statuses = [s for s in statuses if s != view]
+                    
+                    c1, c2 = st.columns(2)
+                    if c1.button(f"→ {other_statuses[0]}", key=f"sub1_{i}"):
+                        target = other_statuses[0]
+                    elif c2.button(f"→ {other_statuses[1]}", key=f"sub2_{i}"):
+                        target = other_statuses[1]
+                    else:
+                        target = None
+                    
+                    if target:
+                        row_dict = row.to_dict()
+                        if "id" in row_dict: del row_dict["id"]
+                        row_dict["status"] = target
+                        save_data_to_db(pd.DataFrame([row_dict]))
                         st.rerun()
+
+                    st.divider()
+                    if st.button("🗑️ この本を削除", key=f"del_book_p_{i}", type="secondary", use_container_width=True):
+                        delete_item(row['title'], "book")
             
             with st.expander(f"「{row['title']}」のメモを表示"):
                 if pd.notna(row['detail']) and row['detail'] != "":
