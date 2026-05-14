@@ -300,73 +300,51 @@ if selected == "本棚":
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
 
-# --- 【メモ】セクション（カードタップ・フルモーダル版） ---
+# --- 【メモ】セクション（HTMLバグ修正 & モーダル体験版） ---
 elif selected == "メモ":
-    # 💡 カードをボタン化し、タップで浮かび上がらせるためのカスタムCSS
+    # 💡 CSSでポップオーバーのボタンを「カード」に化けさせる
     st.markdown("""
         <style>
-        /* 1. ポップオーバーのボタン（外枠）をカードのデザインに改造 */
+        /* ポップオーバーのボタン（外枠）をカードのデザインにする */
         div[data-testid="stPopover"] > button {
             background-color: white !important;
             border: none !important;
-            padding: 0 !important;
+            border-left: 6px solid #1d3557 !important; /* 左のアクセント線 */
+            padding: 15px 20px !important;
             width: 100% !important;
             text-align: left !important;
             box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
             border-radius: 12px !important;
             margin-bottom: 12px !important;
             display: block !important;
-            transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-        }
-        /* 押した時のフィードバック */
-        div[data-testid="stPopover"] > button:active {
-            transform: scale(0.98) !important;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
-        }
-
-        /* 2. カード内部（プレビュー）の見た目 */
-        .memo-inner {
-            padding: 20px;
-            border-left: 6px solid #1d3557;
-            border-radius: 12px;
-        }
-        .memo-title {
-            font-weight: bold;
-            color: #1d3557;
-            font-size: 1.05rem;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-        }
-        .memo-preview {
-            font-size: 0.9rem;
-            color: #444;
-            line-height: 1.6;
-            display: -webkit-box;
-            -webkit-line-clamp: 3; /* 3行で省略 */
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-        .memo-meta {
-            font-size: 0.75rem;
-            color: #95a5a6;
-            margin-top: 10px;
+            height: auto !important;
         }
         
-        /* 3. 浮き上がった画面（モーダル）のカスタマイズ */
-        div[data-testid="stPopoverBody"] {
-            background-color: #ffffff !important;
-            width: 92vw !important; /* スマホ画面いっぱいに広げる */
-            max-height: 80vh !important;
-            border-radius: 15px !important;
-            padding: 10px !important;
+        /* ホバー・タップ時の反応 */
+        div[data-testid="stPopover"] > button:hover, div[data-testid="stPopover"] > button:active {
+            background-color: #f8f9fa !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
         }
-        /* 編集エリアを書きやすく */
+
+        /* ボタン内の文字サイズ調整 */
+        div[data-testid="stPopover"] p {
+            font-size: 1.05rem !important;
+            font-weight: bold !important;
+            color: #1d3557 !important;
+            margin: 0 !important;
+        }
+
+        /* 浮かび上がった画面（モーダル）のサイズ調整 */
+        div[data-testid="stPopoverBody"] {
+            width: 92vw !important;
+            max-height: 85vh !important;
+            border-radius: 15px !important;
+        }
+
+        /* エディタの文字サイズをスマホ向けに固定 */
         .stTextArea textarea {
             font-size: 16px !important;
             line-height: 1.6 !important;
-            background-color: #fafafa !important;
-            border-radius: 10px !important;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -386,8 +364,8 @@ elif selected == "メモ":
 
     existing_tags = get_all_tags(df)
 
-    # 検索・ソート（スマホではコンパクトに）
-    with st.expander("🔍 検索・並び替え", expanded=False):
+    # 検索・フィルタ
+    with st.expander("🔍 検索・フィルタ", expanded=False):
         c1, c2 = st.columns(2)
         selected_tags = c1.multiselect("タグ", options=existing_tags)
         q_search = c2.text_input("キーワード")
@@ -408,21 +386,25 @@ elif selected == "メモ":
 
     # --- 共通の描画・モーダル関数 ---
     def render_modal_memo(i, row, is_book=False):
-        # カード全体を st.popover の「ボタン名（label）」として描画
-        with st.popover(f"""
-            <div class="memo-inner" style="border-left-color: {'#3498db' if is_book else '#1d3557'};">
-                <div class="memo-title">{'📖 ' if is_book else '💡 '}{row['title']}</div>
-                <div class="memo-preview">{row['detail'] if pd.notna(row['detail']) else '内容がありません'}</div>
-                <div class="memo-meta">{row['date']} | {len(str(row['detail']))}文字</div>
-            </div>
-            """, use_container_width=True):
-            
-            # 💡 ここからが「ふわっ」と浮かび上がった後の画面
+        # ボタンのラベルにタイトルを表示（アイコン付き）
+        icon = "📖" if is_book else "💡"
+        label = f"{icon} {row['title']}"
+        
+        # CSSでボタン自体の色（左線）を出し分ける
+        border_color = "#3498db" if is_book else "#1d3557"
+        
+        # popover自体を「カード」として表示
+        with st.popover(label, use_container_width=True):
+            # --- 浮かび上がった後の画面 ---
             st.markdown(f"### {row['title']}")
             st.caption(f"最終更新: {row['date']} | {len(str(row['detail']))}文字")
             
+            # プレビューとして全文を読めるように表示
+            st.info(row['detail'] if pd.notna(row['detail']) else "内容がありません")
+            
             with st.form(key=f"modal_edit_{'b' if is_book else 'd'}_{i}"):
-                new_detail = st.text_area("メモを編集・追記", value=row['detail'] if pd.notna(row['detail']) else "", height=450)
+                st.write("📝 **編集・追記**")
+                new_detail = st.text_area("内容", value=row['detail'] if pd.notna(row['detail']) else "", height=400, label_visibility="collapsed")
                 new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
                 
                 if st.form_submit_button("✅ 変更を保存して閉じる", use_container_width=True):
@@ -452,7 +434,6 @@ elif selected == "メモ":
                 render_modal_memo(i, row, is_book=True)
 
     with tab2:
-        # 日常メモの新規追加
         with st.expander("➕ 新しい日常メモを書く", expanded=False):
             with st.form("add_new_memo", clear_on_submit=True):
                 nt = st.text_input("タイトル")
@@ -468,7 +449,7 @@ elif selected == "メモ":
         memos = filter_data(memos, q_search, selected_tags)
         for i, row in memos.iterrows():
             render_modal_memo(i, row, is_book=False)
-                
+   
 # --- 【計画】 ---
 elif selected == "計画":
     st.markdown("### 📅 Mission Control")
