@@ -300,65 +300,83 @@ if selected == "本棚":
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
 
-# --- 【メモ】セクション（全面タップ・スマホ最適化版） ---
+# --- 【メモ】セクション（HTMLバグ解消＆カード全面タップ版） ---
 elif selected == "メモ":
-    # 💡 CSSでカード全体を巨大なクリック判定にする
+    # 💡 CSS: 二枚目のデザインを再現し、その上に透明なスイッチを重ねる
     st.markdown("""
         <style>
-        /* 1. ポップオーバーのボタンを「カードの外枠」として再設計 */
-        div[data-testid="stPopover"] > button {
-            background-color: white !important;
-            border: none !important;
-            padding: 0 !important; /* 内側の余白をゼロにしてHTMLを密着させる */
-            width: 100% !important;
-            text-align: left !important;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.05) !important;
-            border-radius: 12px !important;
-            margin-bottom: 12px !important;
-            display: block !important;
+        /* 1. カード全体のコンテナ */
+        .card-wrapper {
+            position: relative;
+            margin-bottom: 16px;
+            width: 100%;
         }
-        
-        /* 2. カードの内部デザイン（画像で指定された赤枠の中身） */
-        .custom-card {
-            padding: 18px;
-            border-left: 6px solid #1d3557;
+
+        /* 2. 綺麗な見た目のカード本体（デザイン専用） */
+        .design-card {
+            background-color: white;
             border-radius: 12px;
-            transition: background 0.2s;
-        }
-        .custom-card:active {
-            background-color: #f8f9fa; /* スマホで押した時の反応 */
+            border-left: 6px solid #1d3557;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            pointer-events: none; /* 下にあるpopoverボタンにクリックを透過させる */
         }
         .card-title {
             font-weight: bold;
             color: #1d3557;
-            font-size: 1.05rem;
-            margin-bottom: 6px;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
         }
-        .card-body {
-            font-size: 0.9rem;
+        .card-content {
+            font-size: 0.95rem;
             color: #444;
-            line-height: 1.5;
+            line-height: 1.6;
             display: -webkit-box;
-            -webkit-line-clamp: 3; /* 3行で省略 */
+            -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-        .card-meta {
-            font-size: 0.75rem;
-            color: #95a5a6;
-            margin-top: 10px;
+        .card-footer {
+            font-size: 0.8rem;
+            color: #bdc3c7;
+            margin-top: 12px;
         }
 
-        /* 3. モーダル画面（浮かび上がる画面）のスマホ最適化 */
-        div[data-testid="stPopoverBody"] {
-            width: 94vw !important;
-            max-height: 85vh !important;
-            border-radius: 20px !important;
-            padding: 15px !important;
+        /* 3. Streamlitのpopoverを透明にしてカードの上に被せる（フワッのスイッチ） */
+        div[data-testid="stPopover"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
         }
-        /* 編集エリアの文字を大きく（スマホズーム防止） */
+        div[data-testid="stPopover"] > button {
+            width: 100% !important;
+            height: 100% !important;
+            background-color: transparent !important;
+            border: none !important;
+            color: transparent !important; /* 文字も見えないようにする */
+            padding: 0 !important;
+            box-shadow: none !important;
+        }
+        /* タップ時のフィードバック */
+        .card-wrapper:active .design-card {
+            transform: scale(0.98);
+            background-color: #f9f9f9;
+        }
+
+        /* 4. 浮き上がった後のエディタ画面の調整 */
+        div[data-testid="stPopoverBody"] {
+            width: 92vw !important;
+            max-height: 80vh !important;
+            border-radius: 20px !important;
+            padding: 20px !important;
+        }
         .stTextArea textarea {
-            font-size: 16px !important;
+            font-size: 16px !important; /* iOSズーム防止 */
             line-height: 1.6 !important;
         }
         </style>
@@ -366,7 +384,7 @@ elif selected == "メモ":
 
     df = load_data()
     
-    # --- タグ抽出 ---
+    # タグ抽出関数
     def get_all_tags(dataframe):
         all_tags_raw = dataframe["tags"].dropna().unique()
         tag_set = set()
@@ -376,14 +394,14 @@ elif selected == "メモ":
                 tag = tag.strip().replace("#", "")
                 if tag: tag_set.add(tag)
         return sorted(list(tag_set))
-
+    
     existing_tags = get_all_tags(df)
 
-    # 検索・フィルタ
-    with st.expander("🔍 検索・並び替え", expanded=False):
+    # 検索エリア
+    with st.expander("🔍 検索・フィルタ", expanded=False):
         c1, c2 = st.columns(2)
-        selected_tags = c1.multiselect("タグ", options=existing_tags)
-        q_search = c2.text_input("キーワード")
+        selected_tags = c1.multiselect("タグ選択", options=existing_tags)
+        q_search = c2.text_input("キーワード検索")
         sort_order = st.radio("表示順", ["新しい順", "古い順"], horizontal=True)
         ascending = (sort_order == "古い順")
 
@@ -399,35 +417,31 @@ elif selected == "メモ":
 
     tab1, tab2 = st.tabs(["📖 本の抜き書き", "💡 日常の思考"])
 
-    # --- モーダル表示用関数 ---
-    def render_modal_memo(i, row, is_book=False):
-        # 💡 カード全体の見た目をHTMLで作成
+    # --- モーダル描画関数 ---
+    def render_smart_memo(i, row, is_book=False):
         icon = "📖" if is_book else "💡"
         color = "#3498db" if is_book else "#1d3557"
         
-        card_label = f"""
-            <div class="custom-card" style="border-left-color: {color};">
-                <div class="card-title">{icon} {row['title']}</div>
-                <div class="card-body">{row['detail'] if pd.notna(row['detail']) else ''}</div>
-                <div class="card-meta">{row['date']} | {len(str(row['detail']))}文字</div>
+        # 見た目を作る（HTMLタグが露出しない設計）
+        st.markdown(f"""
+            <div class="card-wrapper">
+                <div class="design-card" style="border-left-color: {color};">
+                    <div class="card-title">{icon} {row['title']}</div>
+                    <div class="card-content">{row['detail'] if pd.notna(row['detail']) else ''}</div>
+                    <div class="card-footer">{row['date']} | {len(str(row['detail']))}文字</div>
+                </div>
             </div>
-        """
-        
-        # 💡 ポップオーバーのラベルにHTMLを渡す
-        with st.popover(card_label, use_container_width=True):
-            # --- 浮かび上がった後の世界 ---
-            st.markdown(f"### {row['title']}")
+        """, unsafe_allow_html=True)
+
+        # 全く同じ場所に透明なpopoverを配置
+        with st.popover("open", use_container_width=True):
+            st.subheader(f"{icon} {row['title']}")
             st.caption(f"最終更新: {row['date']}")
             
-            # スマホでまず「読む」ためのエリア
-            st.markdown("---")
-            st.markdown(f'<div style="font-size: 1rem; line-height: 1.6; color: #333; margin-bottom: 20px; white-space: pre-wrap;">{row["detail"]}</div>', unsafe_allow_html=True)
-            
-            # 編集・削除フォーム
-            with st.form(key=f"modal_edit_{'b' if is_book else 'd'}_{i}"):
-                st.write("📝 **内容を編集する**")
-                new_detail = st.text_area("内容", value=row['detail'] if pd.notna(row['detail']) else "", height=400, label_visibility="collapsed")
-                new_tag = st.text_input("タグ（カンマ区切り）", value=row['tags'] if pd.notna(row['tags']) else "")
+            with st.form(key=f"edit_modal_{'b' if is_book else 'd'}_{i}"):
+                # スマホでの読みやすさを優先
+                new_detail = st.text_area("メモ内容", value=row['detail'] if pd.notna(row['detail']) else "", height=450)
+                new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
                 
                 if st.form_submit_button("✅ 変更を保存して閉じる", use_container_width=True):
                     updated = row.to_dict()
@@ -440,39 +454,38 @@ elif selected == "メモ":
                 
                 if not is_book:
                     with st.expander("🗑️ 削除メニュー"):
-                        st.warning("このメモを削除しますか？")
-                        confirm = st.checkbox("削除を承認します", key=f"del_c_{i}")
-                        if st.button("🔥 削除を実行", key=f"del_e_{i}", type="primary", disabled=not confirm, use_container_width=True):
+                        confirm = st.checkbox("削除を承認する", key=f"del_confirm_{i}")
+                        if st.button("🔥 削除を実行", key=f"del_btn_{i}", type="primary", disabled=not confirm, use_container_width=True):
                             delete_item(row['title'], "memo")
                             st.rerun()
 
-    # --- 各タブの描画 ---
+    # --- 各タブの表示 ---
     with tab1:
         books = df[df["type"]=="book"].copy()
         if not books.empty:
             books = books.sort_values('date', ascending=ascending).drop_duplicates(subset='title', keep='last')
             books = filter_data(books, q_search, selected_tags)
             for i, row in books.iterrows():
-                render_modal_memo(i, row, is_book=True)
+                render_smart_memo(i, row, is_book=True)
 
     with tab2:
-        # 新規作成
-        with st.expander("➕ 新しい日常メモを書く", expanded=False):
-            with st.form("add_new_memo", clear_on_submit=True):
-                nt = st.text_input("タイトル（思考のテーマ）")
-                nc = st.text_area("内容（自由に書き留めてください）", height=300)
-                ntags = st.text_input("タグ（任意）")
-                if st.form_submit_button("🚀 思考を保存する", use_container_width=True):
+        with st.expander("➕ 新しいメモを追加", expanded=False):
+            with st.form("new_memo_form", clear_on_submit=True):
+                nt = st.text_input("タイトル")
+                nc = st.text_area("内容", height=300)
+                ntags = st.text_input("タグ")
+                if st.form_submit_button("保存", use_container_width=True):
                     if nt and nc:
-                        new_row = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": nt, "detail": nc, "tags": ntags}])
-                        save_data_to_db(new_row)
+                        new_m = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": nt, "detail": nc, "tags": ntags}])
+                        save_data_to_db(new_m)
                         st.rerun()
 
         memos = df[df["type"]=="memo"].copy().sort_values('date', ascending=ascending)
         memos = filter_data(memos, q_search, selected_tags)
         for i, row in memos.iterrows():
-            render_modal_memo(i, row, is_book=False)
-   
+            render_smart_memo(i, row, is_book=False)
+
+
 # --- 【計画】 ---
 elif selected == "計画":
     st.markdown("### 📅 Mission Control")
