@@ -300,10 +300,57 @@ if selected == "本棚":
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
 
-# --- メモセクション ---
-if selected == "メモ":
+# --- 【メモ】セクション（スマホ・長文対応版） ---
+elif selected == "メモ":
+    # 💡 スマホでの視認性と操作性を向上させるCSS
+    st.markdown("""
+        <style>
+        /* タイトル・メニュー周りの調整（念のためここにも配置） */
+        .main-title { font-size: 1.2rem !important; font-weight: 800; color: #1d3557; margin: 0; padding: 5px 0 10px 5px; }
+        
+        /* メモカードのデザイン：スマホでタップしやすいサイズ感 */
+        .memo-card {
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            margin-bottom: 12px;
+            border-left: 5px solid #1d3557;
+        }
+        .memo-title {
+            font-weight: bold;
+            color: #1d3557;
+            font-size: 1rem;
+            margin-bottom: 5px;
+        }
+        /* プレビューは3行に制限して一覧性を確保 */
+        .memo-preview {
+            font-size: 0.9rem;
+            color: #444;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            line-height: 1.5;
+        }
+        /* 編集エリア：スマホでズームされないよう16px、背景を少し変えて「書くモード」を強調 */
+        .stTextArea textarea {
+            font-size: 16px !important; 
+            line-height: 1.6 !important;
+            background-color: #fdfdfd !important;
+            padding: 15px !important;
+        }
+        /* ポップオーバー内のスクロールをスムーズに */
+        div[data-testid="stPopoverBody"] {
+            max-height: 80vh !important;
+            overflow-y: auto !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     df = load_data()
-    
+
+    # --- タグ抽出関数 ---
     def get_all_tags(dataframe):
         all_tags_raw = dataframe["tags"].dropna().unique()
         tag_set = set()
@@ -316,13 +363,14 @@ if selected == "メモ":
 
     existing_tags = get_all_tags(df)
 
-    # 検索エリアをコンパクトに
-    with st.expander("🔍 検索・ソート", expanded=False):
-        selected_tags = st.multiselect("タグ", options=existing_tags)
-        q_search = st.text_input("キーワード")
-        sort_order = st.select_slider("並び替え", options=["新しい順", "古い順"])
+    # --- 1. 検索・フィルタリング（スマホでは最初閉じておく） ---
+    with st.expander("🔍 検索・フィルタ", expanded=False):
+        selected_tags = st.multiselect("🏷️ タグで絞り込み", options=existing_tags, placeholder="タグを選択")
+        q_search = st.text_input("🔍 キーワード検索", placeholder="タイトルや内容...")
+        sort_order = st.radio("表示順", ["新しい順", "古い順"], horizontal=True)
         ascending = (sort_order == "古い順")
 
+    # フィルタリング関数
     def filter_data(target_df, search_q, tags):
         res = target_df.copy()
         if search_q:
@@ -333,70 +381,79 @@ if selected == "メモ":
             res = res[res['tags'].str.contains(pattern, case=False, na=False)]
         return res
 
-    tab1, tab2 = st.tabs(["📖 本", "💡 日常"])
+    memo_tab1, memo_tab2 = st.tabs(["📖 本の抜き書き", "💡 日常の思考"])
+
+    # --- 共通の描画・編集用関数 ---
+    def render_memo_item(i, row, is_book=False):
+        # プレビュー表示
+        st.markdown(f"""
+        <div class="memo-card" style="border-left-color: {'#3498db' if is_book else '#1d3557'};">
+            <div class="memo-title">{'📖 ' if is_book else ''}{row['title']}</div>
+            <div class="memo-preview">{row['detail'] if pd.notna(row['detail']) else '（空のメモ）'}</div>
+            <div style="font-size: 0.7rem; color: #999; margin-top: 8px;">{row['date']} | {len(str(row['detail']))}文字</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 全表示・編集用のポップオーバー（これが浮き上がる画面になる）
+        with st.popover("📖 全文表示・編集", use_container_width=True):
+            st.markdown(f"### {row['title']}")
+            st.caption(f"最終更新: {row['date']}  /  合計文字数: {len(str(row['detail']))}文字")
+            
+            with st.form(key=f"edit_form_{'b' if is_book else 'd'}_{i}"):
+                # 💡 高さ500px確保：スマホでもスクロールしながら「読み返し」と「追記」が同時にできる
+                new_detail = st.text_area("メモ内容", value=row['detail'] if pd.notna(row['detail']) else "", height=500)
+                new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
+                
+                if st.form_submit_button("✅ 変更を保存して閉じる", use_container_width=True):
+                    updated_data = row.to_dict()
+                    if "id" in updated_data: del updated_data["id"]
+                    updated_data["detail"] = new_detail
+                    updated_data["tags"] = new_tag
+                    updated_data["date"] = str(datetime.date.today())
+                    save_data_to_db(pd.DataFrame([updated_data]))
+                    st.rerun()
+                
+                # 削除機能（日常メモのみ）
+                if not is_book:
+                    with st.expander("🗑️ このメモを削除する"):
+                        st.error("一度削除すると元に戻せません。")
+                        confirm = st.checkbox("削除を承認します", key=f"del_conf_{i}")
+                        if st.button("🔥 削除を実行", key=f"del_exec_{i}", type="primary", disabled=not confirm):
+                            delete_item(row['title'], "memo")
+                            st.rerun()
 
     # --- タブ1: 本の抜き書き ---
-    with tab1:
-        all_books = df[df["type"]=="book"].copy()
-        if not all_books.empty:
-            book_memos = all_books.sort_values('date', ascending=ascending).drop_duplicates(subset='title', keep='last')
-            book_memos = filter_data(book_memos, q_search, selected_tags)
-            
-            for i, row in book_memos.iterrows():
-                st.markdown(f"""
-                <div class="memo-card" style="border-left-color: #3498db;">
-                    <div style="font-weight: bold; color: #1d3557; font-size: 0.95rem;">📖 {row['title']}</div>
-                    <div style="font-size: 0.85rem; color: #555; margin: 5px 0; line-height: 1.4;">{row['detail'][:100]}...</div>
-                    <div style="font-size: 0.7rem; color: #999;">{row['date']} | {len(str(row['detail']))}文字</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.popover("✍️ 編集", use_container_width=True):
-                    with st.form(key=f"edit_b_{i}"):
-                        new_detail = st.text_area("内容", value=row['detail'], height=350)
-                        new_tag = st.text_input("タグ", value=row['tags'])
-                        if st.form_submit_button("保存", use_container_width=True):
-                            # 保存処理
-                            st.rerun()
+    with memo_tab1:
+        books = df[df["type"]=="book"].copy()
+        if not books.empty:
+            books = books.sort_values('date', ascending=ascending).drop_duplicates(subset='title', keep='last')
+            books = filter_data(books, q_search, selected_tags)
+            for i, row in books.iterrows():
+                render_memo_item(i, row, is_book=True)
 
     # --- タブ2: 日常メモ ---
-    with tab2:
-        with st.expander("➕ 新規追加", expanded=False):
-            with st.form("add_daily", clear_on_submit=True):
-                m_t = st.text_input("タイトル")
-                m_c = st.text_area("内容", height=300)
-                m_tag = st.text_input("タグ")
-                if st.form_submit_button("保存", use_container_width=True):
-                    # 保存処理
-                    st.rerun()
+    with memo_tab2:
+        with st.expander("➕ 新しい日常メモを記録する", expanded=False):
+            with st.form("add_daily_memo", clear_on_submit=True):
+                m_t = st.text_input("タイトル（思考のテーマ）")
+                m_c = st.text_area("内容（自由に書き留めてください）", height=400)
+                m_tags_sel = st.multiselect("既存のタグから選択", options=existing_tags)
+                m_tag_new = st.text_input("新しいタグを追加（任意）")
+                if st.form_submit_button("🚀 思考を保存する", use_container_width=True):
+                    if m_t and m_c:
+                        tag_list = m_tags_sel + ([m_tag_new] if m_tag_new else [])
+                        final_tags = ", ".join(tag_list)
+                        new_m = pd.DataFrame([{
+                            "date": str(datetime.date.today()), "type": "memo", 
+                            "title": m_t, "detail": m_c, "tags": final_tags
+                        }])
+                        save_data_to_db(new_m)
+                        st.rerun()
 
-        daily_memos = df[df["type"]=="memo"].copy().sort_values('date', ascending=ascending)
-        daily_memos = filter_data(daily_memos, q_search, selected_tags)
-            
-        for i, row in daily_memos.iterrows():
-            st.markdown(f"""
-            <div class="memo-card">
-                <div style="font-weight: bold; color: #1d3557; font-size: 0.95rem;">{row['title']}</div>
-                <div style="font-size: 0.85rem; color: #333; margin: 5px 0;">{row['detail'][:100]}...</div>
-                <div style="font-size: 0.7rem; color: #999;">{row['date']} | 🏷️ {row['tags']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            c1, c2 = st.columns(2)
-            with c1:
-                with st.popover("✍️ 編集", use_container_width=True):
-                    with st.form(key=f"edit_d_{i}"):
-                        new_t = st.text_input("タイトル", value=row['title'])
-                        new_c = st.text_area("内容", value=row['detail'], height=350)
-                        if st.form_submit_button("更新"):
-                            # 更新処理
-                            st.rerun()
-            with c2:
-                with st.popover("🗑️ 削除", use_container_width=True):
-                    if st.checkbox("削除承認", key=f"del_chk_{i}"):
-                        if st.button("実行", key=f"del_btn_{i}", type="primary"):
-                            delete_item(row['title'], "memo")
-                            st.rerun()         
+        memos = df[df["type"]=="memo"].copy().sort_values('date', ascending=ascending)
+        memos = filter_data(memos, q_search, selected_tags)
+        for i, row in memos.iterrows():
+            render_memo_item(i, row, is_book=False)     
                 
                 
 # --- 【計画】 ---
