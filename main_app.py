@@ -300,91 +300,56 @@ if selected == "本棚":
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
 
-# --- 【メモ】セクション（HTMLバグ解消＆カード全面タップ版） ---
+# --- 【メモ】セクション（エラー解消・安定デザイン版） ---
 elif selected == "メモ":
-    # 💡 CSS: 二枚目のデザインを再現し、その上に透明なスイッチを重ねる
+    # 💡 CSS: デザインの再現と、スマホでの操作安定化
     st.markdown("""
         <style>
         /* 1. カード全体のコンテナ */
-        .card-wrapper {
-            position: relative;
-            margin-bottom: 16px;
-            width: 100%;
-        }
-
-        /* 2. 綺麗な見た目のカード本体（デザイン専用） */
-        .design-card {
+        .card-container {
             background-color: white;
             border-radius: 12px;
             border-left: 6px solid #1d3557;
-            padding: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            pointer-events: none; /* 下にあるpopoverボタンにクリックを透過させる */
-        }
-        .card-title {
-            font-weight: bold;
-            color: #1d3557;
-            font-size: 1.1rem;
-            margin-bottom: 8px;
-            display: flex;
-            align-items: center;
-        }
-        .card-content {
-            font-size: 0.95rem;
-            color: #444;
-            line-height: 1.6;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-        .card-footer {
-            font-size: 0.8rem;
-            color: #bdc3c7;
-            margin-top: 12px;
+            padding: 18px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.03);
+            margin-bottom: 12px;
+            transition: 0.2s;
         }
 
-        /* 3. Streamlitのpopoverを透明にしてカードの上に被せる（フワッのスイッチ） */
+        /* 2. popoverボタン自体をカード化する（重ね合わせエラーを回避） */
         div[data-testid="stPopover"] {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10;
+            width: 100% !important;
+            margin-bottom: 12px;
         }
         div[data-testid="stPopover"] > button {
-            width: 100% !important;
-            height: 100% !important;
-            background-color: transparent !important;
+            background-color: white !important;
             border: none !important;
-            color: transparent !important; /* 文字も見えないようにする */
-            padding: 0 !important;
-            box-shadow: none !important;
+            border-left: 6px solid #1d3557 !important;
+            padding: 18px !important;
+            width: 100% !important;
+            text-align: left !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important;
+            border-radius: 12px !important;
+            display: block !important;
+            height: auto !important;
         }
-        /* タップ時のフィードバック */
-        .card-wrapper:active .design-card {
-            transform: scale(0.98);
-            background-color: #f9f9f9;
-        }
+        
+        /* タイトル・本文・日付の装飾 */
+        .card-title-text { font-weight: bold; color: #1d3557; font-size: 1.1rem; margin-bottom: 6px; }
+        .card-body-text { font-size: 0.95rem; color: #444; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .card-meta-text { font-size: 0.8rem; color: #bdc3c7; margin-top: 10px; }
 
-        /* 4. 浮き上がった後のエディタ画面の調整 */
+        /* 3. モーダル画面の調整 */
         div[data-testid="stPopoverBody"] {
-            width: 92vw !important;
-            max-height: 80vh !important;
+            width: 94vw !important;
+            max-height: 85vh !important;
             border-radius: 20px !important;
-            padding: 20px !important;
-        }
-        .stTextArea textarea {
-            font-size: 16px !important; /* iOSズーム防止 */
-            line-height: 1.6 !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
     df = load_data()
-    
-    # タグ抽出関数
+      # タグ抽出関数
     def get_all_tags(dataframe):
         all_tags_raw = dataframe["tags"].dropna().unique()
         tag_set = set()
@@ -394,14 +359,13 @@ elif selected == "メモ":
                 tag = tag.strip().replace("#", "")
                 if tag: tag_set.add(tag)
         return sorted(list(tag_set))
-    
     existing_tags = get_all_tags(df)
 
-    # 検索エリア
+    # 検索・フィルタ
     with st.expander("🔍 検索・フィルタ", expanded=False):
         c1, c2 = st.columns(2)
-        selected_tags = c1.multiselect("タグ選択", options=existing_tags)
-        q_search = c2.text_input("キーワード検索")
+        selected_tags = c1.multiselect("タグ", options=existing_tags)
+        q_search = c2.text_input("キーワード")
         sort_order = st.radio("表示順", ["新しい順", "古い順"], horizontal=True)
         ascending = (sort_order == "古い順")
 
@@ -417,33 +381,31 @@ elif selected == "メモ":
 
     tab1, tab2 = st.tabs(["📖 本の抜き書き", "💡 日常の思考"])
 
-    # --- モーダル描画関数 ---
+    # --- 共通描画関数 ---
     def render_smart_memo(i, row, is_book=False):
         icon = "📖" if is_book else "💡"
         color = "#3498db" if is_book else "#1d3557"
         
-        # 見た目を作る（HTMLタグが露出しない設計）
-        st.markdown(f"""
-            <div class="card-wrapper">
-                <div class="design-card" style="border-left-color: {color};">
-                    <div class="card-title">{icon} {row['title']}</div>
-                    <div class="card-content">{row['detail'] if pd.notna(row['detail']) else ''}</div>
-                    <div class="card-footer">{row['date']} | {len(str(row['detail']))}文字</div>
-                </div>
+        # 💡 ボタンの内側にデザインを仕込む（HTMLタグ露出を完全に防ぐ）
+        # unsafe_allow_htmlを使わず、中身を直接構成
+        card_label = f"""
+            <div style="pointer-events: none;">
+                <div class="card-title-text">{icon} {row['title']}</div>
+                <div class="card-body-text">{row['detail'] if pd.notna(row['detail']) else ''}</div>
+                <div class="card-meta-text">{row['date']} | {len(str(row['detail']))}文字</div>
             </div>
-        """, unsafe_allow_html=True)
-
-        # 全く同じ場所に透明なpopoverを配置
-        with st.popover("open", use_container_width=True):
-            st.subheader(f"{icon} {row['title']}")
-            st.caption(f"最終更新: {row['date']}")
+        """
+        
+        # popover自体をカードにする。これならエラーが出ません。
+        with st.popover(card_label, use_container_width=True):
+            st.markdown(f"### {icon} {row['title']}")
             
-            with st.form(key=f"edit_modal_{'b' if is_book else 'd'}_{i}"):
-                # スマホでの読みやすさを優先
-                new_detail = st.text_area("メモ内容", value=row['detail'] if pd.notna(row['detail']) else "", height=450)
+            # 💡 エラー回避のため、ボタンではなく form 内の submit を活用
+            with st.form(key=f"edit_form_{'b' if is_book else 'm'}_{i}"):
+                new_detail = st.text_area("内容を編集", value=row['detail'] if pd.notna(row['detail']) else "", height=400)
                 new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
                 
-                if st.form_submit_button("✅ 変更を保存して閉じる", use_container_width=True):
+                if st.form_submit_button("✅ 変更を保存", use_container_width=True):
                     updated = row.to_dict()
                     if "id" in updated: del updated["id"]
                     updated["detail"] = new_detail
@@ -451,13 +413,13 @@ elif selected == "メモ":
                     updated["date"] = str(datetime.date.today())
                     save_data_to_db(pd.DataFrame([updated]))
                     st.rerun()
-                
-                if not is_book:
-                    with st.expander("🗑️ 削除メニュー"):
-                        confirm = st.checkbox("削除を承認する", key=f"del_confirm_{i}")
-                        if st.button("🔥 削除を実行", key=f"del_btn_{i}", type="primary", disabled=not confirm, use_container_width=True):
-                            delete_item(row['title'], "memo")
-                            st.rerun()
+
+            # 💡 削除ボタンは form の外に出し、重複を避けるためにユニークなkeyを設定
+            if not is_book:
+                with st.expander("🗑️ メモの削除"):
+                    if st.button("🔥 このメモを完全に削除する", key=f"del_btn_final_{i}", type="primary", use_container_width=True):
+                        delete_item(row['title'], "memo")
+                        st.rerun()
 
     # --- 各タブの表示 ---
     with tab1:
@@ -466,25 +428,26 @@ elif selected == "メモ":
             books = books.sort_values('date', ascending=ascending).drop_duplicates(subset='title', keep='last')
             books = filter_data(books, q_search, selected_tags)
             for i, row in books.iterrows():
+                # 本の抜き書きタブ専用の青い線
+                st.markdown(f"<style>div[data-testid='stPopover']:nth-of-type({i+1}) > button {{ border-left-color: #3498db !important; }}</style>", unsafe_allow_html=True)
                 render_smart_memo(i, row, is_book=True)
 
     with tab2:
-        with st.expander("➕ 新しいメモを追加", expanded=False):
-            with st.form("new_memo_form", clear_on_submit=True):
+        with st.expander("➕ 新しいメモを書く", expanded=False):
+            with st.form("add_new_memo", clear_on_submit=True):
                 nt = st.text_input("タイトル")
                 nc = st.text_area("内容", height=300)
                 ntags = st.text_input("タグ")
                 if st.form_submit_button("保存", use_container_width=True):
                     if nt and nc:
-                        new_m = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": nt, "detail": nc, "tags": ntags}])
-                        save_data_to_db(new_m)
+                        new_row = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": nt, "detail": nc, "tags": ntags}])
+                        save_data_to_db(new_row)
                         st.rerun()
 
         memos = df[df["type"]=="memo"].copy().sort_values('date', ascending=ascending)
         memos = filter_data(memos, q_search, selected_tags)
         for i, row in memos.iterrows():
             render_smart_memo(i, row, is_book=False)
-
 
 # --- 【計画】 ---
 elif selected == "計画":
