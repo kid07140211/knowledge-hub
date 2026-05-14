@@ -300,57 +300,62 @@ if selected == "本棚":
             st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
             
 
-# --- 【メモ】セクション（二枚目デザイン完全再現版） ---
+# --- 【メモ】セクション（二枚目デザイン・完全再現版） ---
 elif selected == "メモ":
-    # 💡 CSS: 二枚目のデザイン（左線、プレビュー、日付）をボタンの上に再現
+    # 💡 CSS: 二枚目（1000011843.jpg）の「左線カード」を完全に再現する
     st.markdown("""
         <style>
-        /* 1. ポップオーバーのボタンをカード化 */
+        /* 1. 外側のカード（ポップオーバーボタン）の設定 */
         div[data-testid="stPopover"] > button {
-            background-color: white !important;
-            border: none !important;
-            border-left: 6px solid #1d3557 !important; /* 左側の太い線 */
-            padding: 20px !important;
+            background-color: #ffffff !important;
+            border: 1px solid #f0f2f6 !important; /* 薄い枠線 */
+            border-left: 5px solid #1d3557 !important; /* 左のアクセント線（後で色指定） */
+            padding: 15px 20px !important;
             width: 100% !important;
             text-align: left !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05) !important;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.03) !important;
             border-radius: 12px !important;
             margin-bottom: 12px !important;
-            display: flex !important;
-            flex-direction: column !important;
+            display: block !important; /* 縦並びを強制 */
             height: auto !important;
+            transition: all 0.2s ease;
         }
 
-        /* 2. ボタン内のテキスト構造を二枚目のように配置 */
-        /* タイトル */
-        div[data-testid="stPopover"] p {
-            margin: 0 !important;
-            padding: 0 !important;
-            line-height: 1.4 !important;
-        }
-        /* 1行目（タイトル）を太字にする */
+        /* 2. カード内のテキストスタイル */
+        /* タイトル部分（1行目） */
         div[data-testid="stPopover"] p:first-child {
-            font-weight: bold !important;
-            font-size: 1.1rem !important;
-            color: #1d3557 !important;
-            margin-bottom: 6px !important;
-        }
-        /* 2行目以降（プレビューと日付） */
-        div[data-testid="stPopover"] p:not(:first-child) {
-            font-weight: normal !important;
-            font-size: 0.9rem !important;
-            color: #666 !important;
+            font-weight: 800 !important; /* かなり太く */
+            font-size: 1.15rem !important;
+            color: #2c3e50 !important;
+            margin-bottom: 8px !important;
+            display: block !important;
         }
 
-        /* 3. 本の抜き書きタブ（青）と日常（紺）で色を分ける */
-        /* ※render関数内で個別に注入 */
+        /* 内容プレビュー（2行目） */
+        div[data-testid="stPopover"] p:nth-child(2) {
+            font-weight: 400 !important;
+            font-size: 0.95rem !important;
+            color: #4a4a4a !important;
+            line-height: 1.5 !important;
+            margin-bottom: 8px !important;
+            display: -webkit-box !important;
+            -webkit-line-clamp: 2; /* 2行で省略 */
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
 
-        /* 4. モーダル（浮き上がり画面）のスマホ最適化 */
-        div[data-testid="stPopoverBody"] {
-            width: 94vw !important;
-            max-height: 85vh !important;
-            border-radius: 20px !important;
-            padding: 10px !important;
+        /* 日付・文字数（3行目） */
+        div[data-testid="stPopover"] p:last-child {
+            font-weight: 400 !important;
+            font-size: 0.8rem !important;
+            color: #95a5a6 !important;
+            margin-top: 5px !important;
+        }
+
+        /* ホバー時の挙動 */
+        div[data-testid="stPopover"] > button:hover {
+            box-shadow: 0 6px 15px rgba(0,0,0,0.08) !important;
+            transform: translateY(-2px);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -367,10 +372,10 @@ elif selected == "メモ":
                 tag = tag.strip().replace("#", "")
                 if tag: tag_set.add(tag)
         return sorted(list(tag_set))
-
+    
     existing_tags = get_all_tags(df)
 
-    # 検索・フィルタ
+    # 検索・フィルタ（デザイン統一）
     with st.expander("🔍 検索・フィルタ", expanded=False):
         c1, c2 = st.columns(2)
         selected_tags = c1.multiselect("タグ", options=existing_tags)
@@ -390,26 +395,23 @@ elif selected == "メモ":
 
     tab1, tab2 = st.tabs(["📖 本の抜き書き", "💡 日常の思考"])
 
-    # --- 二枚目デザイン再現用の描画関数 ---
-    def render_rich_card(i, row, is_book=False):
+    def render_final_card(i, row, is_book=False):
         icon = "📖" if is_book else "💡"
-        # プレビュー用に本文の先頭を少し取得
-        preview = str(row['detail'])[:60] + "..." if len(str(row['detail'])) > 60 else str(row['detail'])
+        # プレビューテキストを作成
+        preview = str(row['detail']).replace('\n', ' ')
         
-        # 💡 Streamlitのpopoverに改行を含めたテキストを渡す
-        # これがCSSのfirst-child等と連動してカード風になります
-        label_content = f"{icon} {row['title']}\n{preview}\n{row['date']} | {len(str(row['detail']))}文字"
+        # 💡 ここが肝：タイトル、内容、日付をそれぞれ独立した行として渡す
+        # CSSの :first-child, :nth-child(2), :last-child で別々のスタイルを当てる
+        label_text = f"{icon} {row['title']}\n{preview}\n{row['date']} | {len(str(row['detail']))}文字"
         
-        with st.popover(label_content, use_container_width=True):
-            # --- 浮かび上がった後の編集画面 ---
-            st.subheader(f"{icon} {row['title']}")
-            st.caption(f"最終更新: {row['date']}")
+        with st.popover(label_text, use_container_width=True):
+            # 浮かび上がった画面
+            st.markdown(f"### {icon} {row['title']}")
             
-            with st.form(key=f"edit_form_{'b' if is_book else 'm'}_{i}"):
-                new_detail = st.text_area("内容", value=row['detail'] if pd.notna(row['detail']) else "", height=450)
-                new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
-                
-                if st.form_submit_button("✅ 保存して閉じる", use_container_width=True):
+            with st.form(key=f"edit_v3_{'b' if is_book else 'm'}_{i}"):
+                new_detail = st.text_area("編集", value=row['detail'], height=400)
+                new_tag = st.text_input("タグ", value=row['tags'])
+                if st.form_submit_button("✅ 更新して閉じる", use_container_width=True):
                     updated = row.to_dict()
                     if "id" in updated: del updated["id"]
                     updated["detail"] = new_detail
@@ -419,40 +421,37 @@ elif selected == "メモ":
                     st.rerun()
 
             if not is_book:
-                with st.expander("🗑️ 削除"):
-                    if st.button("このメモを削除", key=f"del_final_{i}", type="primary", use_container_width=True):
-                        delete_item(row['title'], "memo")
-                        st.rerun()
+                if st.button("🗑️ 削除", key=f"del_v3_{i}", type="primary"):
+                    delete_item(row['title'], "memo")
+                    st.rerun()
 
-    # --- タブ表示 ---
     with tab1:
         books = df[df["type"]=="book"].copy()
         if not books.empty:
             books = books.sort_values('date', ascending=ascending).drop_duplicates(subset='title', keep='last')
             books = filter_data(books, q_search, selected_tags)
-            for i, row in books.iterrows():
-                # 青色の左線を適用
+            for i, (idx, row) in enumerate(books.iterrows()):
+                # 📖 本の抜き書きは「青色（#3498db）」の左線
                 st.markdown(f"<style>div[data-testid='stPopover']:nth-of-type({i+1}) > button {{ border-left-color: #3498db !important; }}</style>", unsafe_allow_html=True)
-                render_rich_card(i, row, is_book=True)
+                render_final_card(i, row, is_book=True)
 
     with tab2:
-        # 新規メモ作成
-        with st.expander("➕ 新しい日常メモを書く", expanded=False):
-            with st.form("new_memo_form", clear_on_submit=True):
+        # 新規作成
+        with st.expander("➕ 新しい日常メモ"):
+            with st.form("new_memo"):
                 nt = st.text_input("タイトル")
-                nc = st.text_area("内容", height=300)
-                ntags = st.text_input("タグ")
-                if st.form_submit_button("保存", use_container_width=True):
-                    if nt and nc:
-                        new_row = pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": nt, "detail": nc, "tags": ntags}])
-                        save_data_to_db(new_row)
-                        st.rerun()
+                nc = st.text_area("内容")
+                if st.form_submit_button("保存"):
+                    save_data_to_db(pd.DataFrame([{"date": str(datetime.date.today()), "type": "memo", "title": nt, "detail": nc}]))
+                    st.rerun()
 
         memos = df[df["type"]=="memo"].copy().sort_values('date', ascending=ascending)
         memos = filter_data(memos, q_search, selected_tags)
-        for i, row in memos.iterrows():
-            # 紺色の左線を適用（デフォルト）
-            render_rich_card(i, row, is_book=False)
+        for i, (idx, row) in enumerate(memos.iterrows()):
+            # 💡 日常の思考は「紺色（#1d3557）」の左線
+            # tab1の数だけnth-of-typeがズレるのを防ぐため、個別に色指定
+            st.markdown(f"<style>div[tabpanel='1'] div[data-testid='stPopover']:nth-of-type({i+2}) > button {{ border-left-color: #1d3557 !important; }}</style>", unsafe_allow_html=True)
+            render_final_card(i, row, is_book=False)
             
             
             
