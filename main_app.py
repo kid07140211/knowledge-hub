@@ -261,12 +261,47 @@ if selected == "本棚":
 elif selected == "メモ":
     st.markdown("### 📝 Knowledge & Thought Log")
     
-    # 共通のソート設定
-    sort_order = st.radio("表示順", ["新しい順", "古い順"], horizontal=True)
-    ascending = True if sort_order == "古い順" else False
+    # --- 共通準備: 全データからタグを抽出して候補リストを作成 ---
+    df = load_data()
+    
+    def get_all_tags(dataframe):
+        # カンマやスペースで区切られたタグをバラバラにして整理
+        all_tags_raw = dataframe["tags"].dropna().unique()
+        tag_set = set()
+        for t in all_tags_raw:
+            tags = re.split('[ ,、　]', str(t))
+            for tag in tags:
+                tag = tag.strip().replace("#", "")
+                if tag: tag_set.add(tag)
+        return sorted(list(tag_set))
+
+    existing_tags = get_all_tags(df)
+
+    # --- 1. 検索・フィルタリング UI ---
+    with st.expander("🔍 絞り込み・ソート設定", expanded=True):
+        c1, c2, c3 = st.columns([2, 2, 1])
+        with c1:
+            # 💡 アイデア：タグ候補から選べるマルチセレクト（オートコンプリート）
+            selected_tags = st.multiselect("🏷️ タグで絞り込み", options=existing_tags, placeholder="タグを選択...")
+        with c2:
+            q_search = st.text_input("🔍 キーワード検索", placeholder="タイトルや内容から...")
+        with c3:
+            sort_order = st.selectbox("並び替え", ["新しい順", "古い順"])
+            ascending = True if sort_order == "古い順" else False
+
+    # フィルタリング用関数
+    def filter_data(target_df, search_q, tags):
+        res = target_df.copy()
+        if search_q:
+            res = res[res['title'].str.contains(search_q, case=False, na=False) | 
+                      res['detail'].str.contains(search_q, case=False, na=False)]
+        if tags:
+            # 選択されたタグのいずれかを含むものを抽出（部分一致）
+            pattern = '|'.join(tags)
+            res = res[res['tags'].str.contains(pattern, case=False, na=False)]
+        return res
 
     memo_tab1, memo_tab2 = st.tabs(["📖 本の抜き書き・感想", "💡 日常の思考・アイデア"])
-    df = load_data()
 
     # --- タブ1: 本の抜き書き ---
     with memo_tab1:
@@ -274,46 +309,41 @@ elif selected == "メモ":
         
         all_books = df[df["type"]=="book"].copy()
         if not all_books.empty:
-            # 最新の編集を反映させるため、日付でソートして重複排除
             book_memos = all_books.sort_values('date', ascending=ascending).drop_duplicates(subset='title', keep='last')
-        else:
-            book_memos = pd.DataFrame()
-        
-        b_q = st.text_input("🔍 本のタイトルや著者で検索", key="b_memo_q")
-        if b_q and not book_memos.empty:
-            book_memos = book_memos[
-                book_memos['title'].str.contains(b_q, case=False, na=False) | 
-                book_memos['author'].str.contains(b_q, case=False, na=False)
-            ]
-
-        if book_memos.empty:
-            st.info("メモが見つかりません。")
-        else:
-            for i, row in book_memos.iterrows():
-                has_memo = pd.notna(row['detail']) and str(row['detail']).strip() != ""
-                display_text = row['detail'] if has_memo else "（まだメモが登録されていません）"
-                char_count = len(str(row['detail'])) if has_memo else 0
-                
-                st.markdown(f"""
-                <div style="background: white; padding: 20px; border-radius: 15px; border-left: 6px solid #3498db; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <span style="font-weight: bold; font-size: 1.1rem; color: #1d3557;">📖 {row['title']}</span>
-                        <span style="font-size: 0.8rem; color: #95a5a6;">最終更新: {row['date']} | {char_count}文字</span>
+            # フィルタ適用
+            book_memos = filter_data(book_memos, q_search, selected_tags)
+            
+            if book_memos.empty:
+                st.info("条件に合うメモが見つかりません。")
+            else:
+                for i, row in book_memos.iterrows():
+                    has_memo = pd.notna(row['detail']) and str(row['detail']).strip() != ""
+                    display_text = row['detail'] if has_memo else "（まだメモが登録されていません）"
+                    char_count = len(str(row['detail'])) if has_memo else 0
+                    
+                    st.markdown(f"""
+                    <div style="background: white; padding: 20px; border-radius: 15px; border-left: 6px solid #3498db; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-weight: bold; font-size: 1.1rem; color: #1d3557;">📖 {row['title']}</span>
+                            <span style="font-size: 0.8rem; color: #95a5a6;">最終更新: {row['date']} | {char_count}文字</span>
+                        </div>
+                        <div style="background: #fcfcfc; padding: 15px; border-radius: 8px; font-size: 0.95rem; line-height: 1.6; color: {'#34495e' if has_memo else '#bdc3c7'}; white-space: pre-wrap; border: 1px solid #f1f1f1;">{display_text}</div>
+                        <div style="margin-top: 10px; color: #3498db; font-size: 0.8rem;">🏷️ {row['tags'] if pd.notna(row['tags']) else ''}</div>
                     </div>
-                    <div style="background: #fcfcfc; padding: 15px; border-radius: 8px; font-size: 0.95rem; line-height: 1.6; color: {'#34495e' if has_memo else '#bdc3c7'}; white-space: pre-wrap; border: 1px solid #f1f1f1;">{display_text}</div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.popover("✍️ メモを編集・追記", use_container_width=True):
-                    with st.form(key=f"edit_b_form_{i}"):
-                        new_detail = st.text_area("内容", value=row['detail'] if pd.notna(row['detail']) else "", height=300)
-                        if st.form_submit_button("✅ 変更を保存"):
-                            updated_row = row.to_dict()
-                            if "id" in updated_row: del updated_row["id"]
-                            updated_row["detail"] = new_detail
-                            updated_row["date"] = str(datetime.date.today()) # 更新日を今日にする
-                            save_data_to_db(pd.DataFrame([updated_row]))
-                            st.rerun()
+                    """, unsafe_allow_html=True)
+                    
+                    with st.popover("✍️ メモを編集・追記", use_container_width=True):
+                        with st.form(key=f"edit_b_form_{i}"):
+                            new_detail = st.text_area("内容", value=row['detail'] if pd.notna(row['detail']) else "", height=300)
+                            new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
+                            if st.form_submit_button("✅ 変更を保存"):
+                                updated_row = row.to_dict()
+                                if "id" in updated_row: del updated_row["id"]
+                                updated_row["detail"] = new_detail
+                                updated_row["tags"] = new_tag
+                                updated_row["date"] = str(datetime.date.today())
+                                save_data_to_db(pd.DataFrame([updated_row]))
+                                st.rerun()
 
     # --- タブ2: 日常メモ ---
     with memo_tab2:
@@ -323,24 +353,23 @@ elif selected == "メモ":
             with st.form("add_daily_memo", clear_on_submit=True):
                 m_t = st.text_input("タイトル")
                 m_c = st.text_area("内容")
-                m_tag = st.text_input("タグ（#アイデア #ToDo など）")
+                m_tag = st.multiselect("既存のタグから選択", options=existing_tags)
+                m_tag_new = st.text_input("新しいタグ（あれば追加）")
+                
                 if st.form_submit_button("保存"):
                     if m_t and m_c:
+                        final_tags = ", ".join(m_tag) + (f", {m_tag_new}" if m_tag_new else "")
                         new_m = pd.DataFrame([{
                             "date": str(datetime.date.today()), "type": "memo", 
-                            "title": m_t, "detail": m_c, "tags": m_tag
+                            "title": m_t, "detail": m_c, "tags": final_tags
                         }])
                         save_data_to_db(new_m)
                         st.rerun()
 
         daily_memos = df[df["type"]=="memo"].copy()
-        # 日付でソート
         daily_memos = daily_memos.sort_values('date', ascending=ascending)
-
-        q_search = st.text_input("🔍 キーワード検索", key="daily_memo_search")
-        if q_search:
-            daily_memos = daily_memos[daily_memos['title'].str.contains(q_search, case=False) | 
-                                      daily_memos['detail'].str.contains(q_search, case=False)]
+        # フィルタ適用
+        daily_memos = filter_data(daily_memos, q_search, selected_tags)
             
         for i, row in daily_memos.iterrows():
             char_count = len(str(row['detail']))
@@ -351,7 +380,7 @@ elif selected == "メモ":
                     <span style="color: #adb5bd; font-size: 0.7rem;">作成・更新: {row['date']} | {char_count}文字</span>
                 </div>
                 <div style="font-size: 0.9rem; margin-top: 5px; white-space: pre-wrap;">{row['detail']}</div>
-                <div style="margin-top: 8px; color: #3498db; font-size: 0.75rem;">{row['tags'] if pd.notna(row['tags']) else ''}</div>
+                <div style="margin-top: 8px; color: #3498db; font-size: 0.75rem;">🏷️ {row['tags'] if pd.notna(row['tags']) else ''}</div>
             </div>
             """, unsafe_allow_html=True)
             
@@ -363,17 +392,14 @@ elif selected == "メモ":
                         new_c = st.text_area("内容", value=row['detail'], height=200)
                         new_tag = st.text_input("タグ", value=row['tags'] if pd.notna(row['tags']) else "")
                         if st.form_submit_button("✅ 更新"):
-                            # 日常メモはタイトルが変わる可能性があるので、削除して再登録ではなくeq(id)で更新が理想ですが、
-                            # 現状の簡易設計に合わせて「同じタイトルで新しい日付」で保存します
                             updated_d = {"date": str(datetime.date.today()), "type": "memo", 
                                          "title": new_t, "detail": new_c, "tags": new_tag}
                             save_data_to_db(pd.DataFrame([updated_d]))
                             st.rerun()
             with c2:
-                if st.button("🗑️", key=f"del_daily_{i}", help="削除"):
+                if st.button("🗑️", key=f"del_daily_{i}"):
                     delete_item(row['title'], "memo")
-                    st.rerun()
-                
+                    st.rerun()             
                 
                 
 # --- 【計画】 ---
